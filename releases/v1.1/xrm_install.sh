@@ -1,5 +1,5 @@
 #!/bin/bash
-
+	docker_compose_file="/home/xrm_v1.1/docker-compose.yml"
 	xrm_ver="ver. 1.1"
 	
 # Функция для вывода тех информации
