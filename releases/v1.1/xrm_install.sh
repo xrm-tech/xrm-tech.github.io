@@ -1,12 +1,8 @@
 #!/bin/bash
 
-# Проверка прав на выполнение
-if [ ! -x "$0" ]; then
-  echo "Ошибка: Нет прав на выполнение скрипта. Выполните chmod +x xrm_install.sh для установки прав."
-  exit 1
-fi
-
-# Функция для вывода информации об ОС и системных характеристиках
+	xrm_ver="ver. 1.1"
+	
+# Функция для вывода тех информации
 get_pc_info() {
     os=$(lsb_release -si)
     release=$(lsb_release -sr)
@@ -17,9 +13,9 @@ get_pc_info() {
     echo "Архитектура процессора: $architecture"
 	echo "Количество ядер процессора: $(nproc)"
 	echo "Объем оперативной памяти: $memory_gb GB"
-    echo "Свободное место на диске: $free_space"
+    echo "Свободное место на жестком диске: $free_space"
 	echo
-	echo -e "\e[32mСистемные требования для работы XRM\e[0m"
+	echo -e "\e[32mТехнические требования для установки и работы XRM\e[0m"
 	echo
     echo "Поддерживаемые операционные системы для установки:"
 	echo
@@ -36,7 +32,7 @@ get_pc_info() {
 	}
 
 
-# Функция для проверки версий Docker и Docker Compose
+# Функция проверки версий Docker и Docker Compose
 check_docker() {
     if command -v docker &> /dev/null; then
         docker_version=$(docker -v | awk '{print $3}')
@@ -45,27 +41,33 @@ check_docker() {
         echo "Docker - Не установлен"
     fi
 
-    if command -v docker-compose &> /dev/null; then
-        docker_compose_version=$(docker-compose -v | awk '{print $4}')
-        echo "Версия Docker Compose: $docker_compose_version"
-    elif docker compose version &> /dev/null; then
-        alt_docker_compose_version=$(docker compose version | awk '/version/ {print $4}')
-        echo "Версия Docker Compose: $alt_docker_compose_version"
-    else
-        echo "Docker Compose - Не установлен"
-    fi
-	
+  # Проверка docker-compose version или docker compose version
+if docker compose version &> /dev/null; then
+    docker_compose_version=$(docker compose version 2>&1 | awk '/version/ {print $4}')
+elif docker-compose version &> /dev/null; then
+    docker_compose_version=$(docker-compose version 2>&1 | awk '/version/ {print $4}')
+else
+    echo "Docker Compose - Не установлен"
+fi
+
+if [ -n "$docker_compose_version" ]; then
+    echo "Версия Docker Compose: $docker_compose_version"
+else
+    echo "Docker Compose - Не установлен"
+fi
 	echo
     echo -e "\e[32mРекомендуемые версии Docker и Docker Compose\e[0m"
 	echo
-    echo "Для стабильной работы XRM на рекомендуем использовать версию Docker 20.10.24 и выше."
-	echo "Docker Compose версию 2.17.3 и выше."
+    echo "Для установки и работы XRM рекомендуем использовать версии:"
+	echo "- Docker 20.10.24 и выше."
+	echo "- Docker Compose 2.17.3 и выше."
 }
 
 docker_install() {
-# Проверка наличия Docker в ОС
+# Проверка наличия Docker и его установка на примере ОС Ubuntu 22.04 (jammy) 
 if command -v docker &> /dev/null; then
-    echo -e "\e[32mCреда контейнеризации Docker уже установлена.\e[0m"
+    docker_version=$(docker -v | awk '{print $3}')
+    echo -e "\e[32mCреда контейнеризации Docker (версия $docker_version) уже установлена.\e[0m"
 else
     echo -e "\e[32m1. Обновляем индексы пакетов apt\e[0m"
     sudo apt update
@@ -100,17 +102,23 @@ fi
 # Развертывание XRM 1.1
 xrm_install() {
 if ! command -v docker &> /dev/null; then
-    echo -e "\e[31mXRM не может быть установлен, не найдена среда контейнеризации Docker.\e[0m"
+    echo -e "\e[31mXRM $xrm_ver не может быть установлен, не найдена среда контейнеризации Docker.\e[0m"
 else
     if sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
-        echo -e "\e[32mXRM уже установлен.\e[0m"
+        echo -e "\e[32mXRM $xrm_ver уже установлен.\e[0m"
     else
-        echo -e "\e[32m1. Создание директории xrm_v1.1 для X Recovery Manager в каталоге /home\e[0m"
+        echo -e "\e[32m1. Создание директории $xrm_ver для X Recovery Manager в каталоге /home\e[0m"
         sudo mkdir /home/xrm_v1.1 && cd /home/xrm_v1.1
-        echo -e "\e[32m2. Загрузка архива XRM xrm-docker_v1_1.tar.gz\e[0m"
+        echo -e "\e[32m2. Загрузка архива XRM $xrm_ver xrm-docker_v1_1.tar.gz\e[0m"
         sudo wget https://files.x-rm.ru/releases/v1.1/xrm-docker_v1_1.tar.gz
         echo -e "\e[32m3. Извлечение архива xrm-docker_v1_1.tar.gz в директорию home/xrm_v1.1\e[0m"
         sudo tar -zxvf xrm-docker_v1_1.tar.gz
+		# коммент блока установки Ovirt строки с 203 по 207 в файле docker-compose.yml
+if [ -f "$docker_compose_file" ]; then
+    sed -i '203,207 s/^/#/' "$docker_compose_file"
+else
+    echo "Файл docker-compose.yml не найден в /home/xrm_v1.1"
+fi
         echo -e "\e[32m4. Развертывание сервисов веб-приложения XRM.\e[0m"
         sudo docker compose up -d
 
@@ -128,13 +136,13 @@ else
         echo -e "\e[32m5. Установка  XRM oVirt pack\e[0m"
 		seconds=70
 for ((i=seconds; i>=1; i--)); do
-    # Очищаем строку и выводим текущее время
+    # Пауза перед установкой oVirt
     printf "\r\e[32m%s\e[0m Подготовка, установка XRM oVirt начнется через: %02d сек" "$original_text" "$i"
     # Ждем 1 секунду
     sleep 1
 done
 	    sudo docker exec -it xrm-client st2 pack install https://github.com/xrm-tech/xrm-ovirt-st2=xrm_v1.1
-		echo -e "\e[32mУстановка XRM 1.1 завершена.\e[0m"
+		echo -e "\e[32mУстановка XRM $xrm_ver завершена.\e[0m"
     fi
 fi
 }
@@ -160,8 +168,8 @@ fi
 xrm_restart() {
 # Проверка наличия директории /home/xrm_v1.1
 if [ ! -d "/home/xrm_v1.1" ]; then
-    echo "XRM не установлен."
-    exit 1
+    echo "XRM $xrm_ver не установлен."
+    return
 fi
 
 # Переход в директорию
@@ -178,29 +186,27 @@ echo "Произведен перезапуск контейнеров XRM."
 while true; do
     clear
     echo -e "\e[32m##  ##   #####    ##   ##\e[0m"
-	echo -e "\e[32m##  ##   ##  ##   ### ###\e[0m"
-	echo -e "\e[32m ####    ##  ##   #######\e[0m"
+	echo -e "\e[32m ####    ##  ##   ### ###\e[0m"
 	echo -e "\e[32m  ##     #####    ## # ##\e[0m"
 	echo -e "\e[32m ####    ####     ##   ##\e[0m"
 	echo -e "\e[32m##  ##   ## ##    ##   ##\e[0m"
-	echo -e "\e[32m##  ##   ##  ##   ##   ##\e[0m"
 	echo -e "\e[32mX Recovery Manager (XRM) ver. 1.1\e[0m"
 	echo
 	echo "Меню:"
 	echo
-	echo "1. Информация об ОС и системных характеристиках"
+	echo "1. Системные требования"
     echo "2. Информация об установленных Docker / Docker Compose"
     echo "3. Установить Docker / Docker Compose (Ubuntu)"
-	echo "4. Установить XRM ver. 1.1 в среде контейнеризации Docker"
-    echo "5. Удалить XRM"
-	echo "6. Перезапустить XRM"
+	echo "4. Установить XRM $xrm_ver"
+    echo "5. Перезапустить XRM $xrm_ver"
+	echo "6. Удалить XRM $xrm_ver"
 	echo "7. Выйти"
     read -p "Выберите пункт меню: " choice
 
     case $choice in
         1)
             clear
-            echo -e "\e[32mИнформация об ОС и системных характеристиках:\e[0m"
+            echo -e "\e[32mХарактеристики вашей системы:\e[0m"
             echo
 			get_pc_info    
 			echo			
@@ -216,7 +222,7 @@ while true; do
             ;;
         3)
 			clear
-            echo -e "\e[32mУстановка Docker / Docker Compose\e[0m"
+            echo -e "\e[32mУстановка Docker / Docker Compose на ОС Ubuntu 22.04 (jammy)\e[0m"
 			echo
             docker_install
 			echo
@@ -224,7 +230,7 @@ while true; do
             ;;
 		4)
             clear
-            echo -e "\e[32mУстановка XRM ver. 1.1 в среде контейнеризации Docker.\e[0m"
+            echo -e "\e[32mУстановка XRM $xrm_ver в среде контейнеризации Docker.\e[0m"
 			echo
             xrm_install
 			echo
@@ -232,17 +238,17 @@ while true; do
             ;;
         5)
 			clear
-            echo -e "\e[32mУдаление XRM ver. 1.1 из среды контейнеризации Docker.\e[0m"
+            echo -e "\e[32mПерезапуск XRM $xrm_ver в среде контейнеризации Docker.\e[0m"
 			echo
-            xrm_clear
+            xrm_restart
 			echo
             read -p "Нажмите Enter, чтобы вернуться в меню..."
             ;;
 		6)
 			clear
-            echo -e "\e[32mПерезапуск XRM ver. 1.1 в среде контейнеризации Docker.\e[0m"
+            echo -e "\e[32mУдаление XRM $xrm_ver из среды контейнеризации Docker.\e[0m"
 			echo
-            xrm_restart
+            xrm_clear
 			echo
             read -p "Нажмите Enter, чтобы вернуться в меню..."
             ;;		
