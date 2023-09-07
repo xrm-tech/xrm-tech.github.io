@@ -115,10 +115,7 @@ else
         sudo wget https://files.x-rm.ru/releases/${ver_path}/xrm-docker_${ver_path}.tar.gz
         echo -e "\e[32m3. Извлечение архива xrm-docker_${ver_path}.tar.gz в директорию home/xrm_${ver_path}\e[0m"
         sudo tar -zxvf xrm-docker_${ver_path}.tar.gz
-	
-fi
-
-        echo -e "\e[32m4. Развертывание сервисов веб-приложения XRM.\e[0m"
+	echo -e "\e[32m4. Развертывание сервисов веб-приложения XRM.\e[0m"
         sudo docker compose up -d
 
         # Если не удалось выполнить docker compose up -d, попробовать второй вариант под РЕД ОС
@@ -143,6 +140,7 @@ done
 	    sudo docker exec -it xrm-client st2 pack install https://github.com/xrm-tech/xrm-ovirt-st2=master
 		echo -e "\e[32mУстановка XRM $xrm_ver завершена.\e[0m"
     fi
+fi
 }
 
 # Удаление XRM
