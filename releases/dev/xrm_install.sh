@@ -140,7 +140,7 @@ for ((i=seconds; i>=1; i--)); do
     # Ждем 1 секунду
     sleep 1
 done
-	    sudo docker exec -it xrm-client st2 pack install https://github.com/xrm-tech/xrm-ovirt-st2=xrm_${ver_path}
+	    sudo docker exec -it xrm-client st2 pack install https://github.com/xrm-tech/xrm-ovirt-st2=master
 		echo -e "\e[32mУстановка XRM $xrm_ver завершена.\e[0m"
     fi
 }
