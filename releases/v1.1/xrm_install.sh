@@ -1,6 +1,9 @@
 #!/bin/bash
-	docker_compose_file="/home/xrm_v1.1/docker-compose.yml"
-	xrm_ver="ver. 1.1"
+ 
+# "Dev", "ver. 1.1", "ver. 1.2" ...
+xrm_ver="ver. 1.1"
+# "dev", "v1_1", "v1_2" ...
+ver_path="v1_1"
 	
 # Функция для вывода тех информации
 get_pc_info() {
@@ -31,7 +34,6 @@ get_pc_info() {
 	echo "Свободное место на жестком диске: 10 ГБ"
 	}
 
-
 # Функция проверки версий Docker и Docker Compose
 check_docker() {
     if command -v docker &> /dev/null; then
@@ -41,7 +43,7 @@ check_docker() {
         echo "Docker - Не установлен"
     fi
 
-  # Проверка docker-compose version или docker compose version
+ # Проверка docker-compose version или docker compose version
 if docker compose version &> /dev/null; then
     docker_compose_version=$(docker compose version 2>&1 | awk '/version/ {print $4}')
 elif docker-compose version &> /dev/null; then
@@ -99,7 +101,7 @@ else
 fi
 }
 
-# Развертывание XRM 1.1
+# Развертывание XRM Dev
 xrm_install() {
 if ! command -v docker &> /dev/null; then
     echo -e "\e[31mXRM $xrm_ver не может быть установлен, не найдена среда контейнеризации Docker.\e[0m"
@@ -108,18 +110,12 @@ else
         echo -e "\e[32mXRM $xrm_ver уже установлен.\e[0m"
     else
         echo -e "\e[32m1. Создание директории $xrm_ver для X Recovery Manager в каталоге /home\e[0m"
-        sudo mkdir /home/xrm_v1.1 && cd /home/xrm_v1.1
-        echo -e "\e[32m2. Загрузка архива XRM $xrm_ver xrm-docker_v1_1.tar.gz\e[0m"
-        sudo wget https://files.x-rm.ru/releases/v1.1/xrm-docker_v1_1.tar.gz
-        echo -e "\e[32m3. Извлечение архива xrm-docker_v1_1.tar.gz в директорию home/xrm_v1.1\e[0m"
-        sudo tar -zxvf xrm-docker_v1_1.tar.gz
-		# коммент блока установки Ovirt строки с 203 по 207 в файле docker-compose.yml
-if [ -f "$docker_compose_file" ]; then
-    sed -i '203,207 s/^/#/' "$docker_compose_file"
-else
-    echo "Файл docker-compose.yml не найден в /home/xrm_v1.1"
-fi
-        echo -e "\e[32m4. Развертывание сервисов веб-приложения XRM.\e[0m"
+        sudo mkdir /home/xrm_${ver_path} && cd /home/xrm_${ver_path}
+        echo -e "\e[32m2. Загрузка архива XRM $xrm_ver xrm-docker_${ver_path}.tar.gz\e[0m"
+        sudo wget https://files.x-rm.ru/releases/${ver_path}/xrm-docker_${ver_path}.tar.gz
+        echo -e "\e[32m3. Извлечение архива xrm-docker_${ver_path}.tar.gz в директорию home/xrm_${ver_path}\e[0m"
+        sudo tar -zxvf xrm-docker_${ver_path}.tar.gz
+	echo -e "\e[32m4. Развертывание сервисов веб-приложения XRM.\e[0m"
         sudo docker compose up -d
 
         # Если не удалось выполнить docker compose up -d, попробовать второй вариант под РЕД ОС
@@ -147,7 +143,7 @@ done
 fi
 }
 
-# Удаление XRM 1.1
+# Удаление XRM
 xrm_clear() {
 if sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
     echo -e "\e[32m1. Остановка и удаление контейнеров связанных с XRM.\e[0m"
@@ -156,8 +152,8 @@ if sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
     sudo docker images | grep -E "xrm|stackstorm" | awk '{print $3}' | xargs sudo docker rmi
     echo -e "\e[32m3. Удаление volume (dangling) томов, не привязаных к контейнерам.\e[0m"
     sudo docker volume rm $(sudo docker volume ls -qf dangling=true)
-    echo -e "\e[32m4. Удаление директории /home/xrm_v1.1, файлов связанных с XRM.\e[0m"
-    sudo rm -rf /home/xrm_v1.1
+    echo -e "\e[32m4. Удаление директории /home/xrm_${ver_path}, файлов связанных с XRM.\e[0m"
+    sudo rm -rf /home/xrm_${ver_path}
 	echo -e "\e[32mУдаление завершено.\e[0m"
 else
     echo -e "\e[32mXRM не установлен.\e[0m"
@@ -166,14 +162,14 @@ fi
 
 # Перезапуск контейнеров XRM
 xrm_restart() {
-# Проверка наличия директории /home/xrm_v1.1
-if [ ! -d "/home/xrm_v1.1" ]; then
+# Проверка наличия директории /home/xrm_${ver_path}
+if [ ! -d "/home/xrm_${ver_path}" ]; then
     echo "XRM $xrm_ver не установлен."
     return
 fi
 
 # Переход в директорию
-cd /home/xrm_v1.1
+cd /home/xrm_${ver_path}
 
 # Операции по перезапуску контейнеров
 sudo docker compose down || sudo docker-compose down || su -c "docker-compose down"
@@ -190,7 +186,7 @@ while true; do
 	echo -e "\e[32m  ##     #####    ## # ##\e[0m"
 	echo -e "\e[32m ####    ####     ##   ##\e[0m"
 	echo -e "\e[32m##  ##   ## ##    ##   ##\e[0m"
-	echo -e "\e[32mX Recovery Manager (XRM) ver. 1.1\e[0m"
+	echo -e "\e[32mX Recovery Manager (XRM) $xrm_ver\e[0m"
 	echo
 	echo "Меню:"
 	echo
