@@ -1,9 +1,9 @@
 #!/bin/bash
  
 # "Dev", "ver. 1.1", "ver. 1.2" ...
-	xrm_ver="Dev"
+xrm_ver="Dev"
 # "dev", "v1_1", "v1_2" ...
-  ver_path="dev"
+ver_path="dev"
 	
 # Функция для вывода тех информации
 get_pc_info() {
