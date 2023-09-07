@@ -2,7 +2,7 @@
  
 # "Dev", "ver. 1.1", "ver. 1.2" ...
 	xrm_ver="Dev"
-# "dev", "v1.1", "v.1.2" ...
+# "dev", "v1_1", "v.1_2" ...
   ver_path="dev"
 	
 # Функция для вывода тех информации
@@ -111,10 +111,10 @@ else
     else
         echo -e "\e[32m1. Создание директории $xrm_ver для X Recovery Manager в каталоге /home\e[0m"
         sudo mkdir /home/xrm_${ver_path} && cd /home/xrm_${ver_path}
-        echo -e "\e[32m2. Загрузка архива XRM $xrm_ver xrm-docker_v1_1.tar.gz\e[0m"
-        sudo wget https://files.x-rm.ru/releases/${ver_path}/xrm-docker_v1_1.tar.gz
-        echo -e "\e[32m3. Извлечение архива xrm-docker_v1_1.tar.gz в директорию home/xrm_${ver_path}\e[0m"
-        sudo tar -zxvf xrm-docker_v1_1.tar.gz
+        echo -e "\e[32m2. Загрузка архива XRM $xrm_ver xrm-docker_${ver_path}.tar.gz\e[0m"
+        sudo wget https://files.x-rm.ru/releases/${ver_path}/xrm-docker_${ver_path}.tar.gz
+        echo -e "\e[32m3. Извлечение архива xrm-docker_${ver_path}.tar.gz в директорию home/xrm_${ver_path}\e[0m"
+        sudo tar -zxvf xrm-docker_${ver_path}.tar.gz
 	
 fi
 
