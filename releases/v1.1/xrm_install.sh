@@ -112,7 +112,7 @@ else
         echo -e "\e[32m1. Создание директории $xrm_ver для X Recovery Manager в каталоге /home\e[0m"
         sudo mkdir /home/xrm_${ver_path} && cd /home/xrm_${ver_path}
         echo -e "\e[32m2. Загрузка архива XRM $xrm_ver xrm-docker_${ver_path}.tar.gz\e[0m"
-        sudo wget https://files.x-rm.ru/releases/${ver_path}/xrm-docker_${ver_path}.tar.gz
+        sudo wget https://files.x-rm.ru/releases/v1.1/xrm-docker_${ver_path}.tar.gz
         echo -e "\e[32m3. Извлечение архива xrm-docker_${ver_path}.tar.gz в директорию home/xrm_${ver_path}\e[0m"
         sudo tar -zxvf xrm-docker_${ver_path}.tar.gz
 	echo -e "\e[32m4. Развертывание сервисов веб-приложения XRM.\e[0m"
