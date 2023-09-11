@@ -178,6 +178,41 @@ sudo docker compose up -d || sudo docker-compose up -d || su -c "docker-compose 
 echo "Произведен перезапуск контейнеров XRM."
 }
 
+# Проверка наличия аргументов командной строки
+if [ $# -eq 1 ]; then
+    choice="$1"
+    case $choice in
+        1)
+            get_pc_info
+            exit
+            ;;
+        2)
+            check_docker
+            exit
+            ;;
+        3)
+            docker_install
+            exit
+            ;;
+        4)
+            xrm_install
+            exit
+            ;;
+        5)
+            xrm_restart
+            exit
+            ;;
+        6)
+            xrm_clear
+            exit
+            ;;
+        *)
+            echo "Неверный аргумент. Допустимые аргументы: 1, 2, 3, 4, 5, 6"
+            exit 1
+            ;;
+    esac
+fi
+
 # Основной цикл меню
 while true; do
     clear
