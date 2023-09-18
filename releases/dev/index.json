@@ -31,7 +31,7 @@
       "name": "XRM-Example",
       "python_versions": ["3"],
       "ref": "XRM-Example",
-      "repo_url": "https://github.com/xrm-tech/",
+      "repo_url": "https://github.com/xrm-tech/xrm-example",
       "version": "x.x.x",
       "versions": [
         "1.5.0",
