@@ -4,38 +4,13 @@
     "hash": "a3ab6899d5b965d954f63bcaca1a7dac"
   },
   "packs": {
-    "acos": {
-      "author": "Hiroyasu OHYAMA",
+    "XRM-Example": {
+      "author": "Name author",
       "content": {
         "actions": {
           "count": 28,
           "resources": [
             "add_slb_server",
-            "add_slb_server_port",
-            "add_slb_service_group",
-            "add_slb_service_group_member",
-            "add_slb_virtual_server",
-            "add_slb_virtual_server_port",
-            "create_ip_nat_pool",
-            "del_slb_server",
-            "del_slb_server_port",
-            "del_slb_service_group",
-            "del_slb_service_group_member",
-            "del_slb_virtual_server",
-            "del_slb_virtual_server_port",
-            "delete_ip_nat_pool",
-            "get_ip_nat_pool",
-            "get_slb_server",
-            "get_slb_service_group",
-            "get_slb_service_group_members",
-            "get_slb_virtual_server",
-            "list_ip_nat_pool",
-            "list_slb_policy_templates_v21",
-            "list_slb_servers",
-            "list_slb_servers_v21",
-            "list_slb_service_groups",
-            "list_slb_service_groups_v21",
-            "list_slb_templates",
             "list_slb_virtual_servers",
             "list_slb_virtual_servers_v21"
           ]
@@ -43,40 +18,23 @@
         "tests": {
           "count": 5,
           "resources": [
-            "acos_base_action_test_case.py",
-            "test_get_slb_server.py",
-            "test_list_slb_servers.py",
             "test_slb_service_group.py",
             "test_specified_target.py"
           ]
         }
       },
-      "description": "Manage ACOS-based appliances of A10 Networks.",
-      "email": "user.localhost2000@gmail.com",
+      "description": "Description for the pack.",
+      "email": "author@gmail.com",
       "keywords": [
-        "acos",
-        "load balancer",
-        "ADC",
-        "network"
+        "XRM"
       ],
-      "name": "acos",
+      "name": "XRM-Example",
       "python_versions": ["3"],
-      "ref": "acos",
-      "repo_url": "https://github.com/StackStorm-Exchange/stackstorm-acos",
-      "version": "1.5.0",
+      "ref": "XRM-Example",
+      "repo_url": "https://github.com/xrm-tech/",
+      "version": "x.x.x",
       "versions": [
         "1.5.0",
-        "1.4.0",
-        "1.3.0",
-        "1.2.0",
-        "1.1.0",
-        "1.0.0",
-        "0.2.6",
-        "0.2.5",
-        "0.2.4",
-        "0.2.3",
-        "0.2.2",
-        "0.2.1",
         "0.2.0",
         "0.1.0"
       ]
