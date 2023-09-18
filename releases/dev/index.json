@@ -4,40 +4,26 @@
     "hash": "a3ab6899d5b965d954f63bcaca1a7dac"
   },
   "packs": {
-    "XRM-Example": {
-      "author": "Name author",
+    "XRM_test_pack": {
+      "author": "Your Username",
+      "description": "A test pack for XRM",
+      "email": "your.email@example.com",
+      "keywords": [ "test" ],
+      "version": "0.1.0",
+      "name": "test_pack",
+      "python_versions": ["3"],
+      "repo_url": "https://github.com/xrm-tech/xrm-example",
+      "ref": "test_pack",
       "content": {
         "actions": {
-          "count": 28,
-          "resources": [
-            "add_slb_server",
-            "list_slb_virtual_servers",
-            "list_slb_virtual_servers_v21"
-          ]
+          "count": 1,
+          "resources": [ "test" ]
         },
         "tests": {
-          "count": 5,
-          "resources": [
-            "test_slb_service_group.py",
-            "test_specified_target.py"
-          ]
+          "count": 0,
+          "resources": []
         }
-      },
-      "description": "Description for the pack.",
-      "email": "author@gmail.com",
-      "keywords": [
-        "XRM"
-      ],
-      "name": "XRM-Example",
-      "python_versions": ["3"],
-      "ref": "XRM-Example",
-      "repo_url": "https://github.com/xrm-tech/xrm-example",
-      "version": "x.x.x",
-      "versions": [
-        "1.5.0",
-        "0.2.0",
-        "0.1.0"
-      ]
+      }
     }
   }
 }
