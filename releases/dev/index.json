@@ -4,7 +4,7 @@
     "hash": "a3ab6899d5b965d954f63bcaca1a7dac"
   },
   "packs": {
-    "acos": {
+    "acos_1": {
       "author": "Hiroyasu OHYAMA",
       "content": {
         "actions": {
@@ -52,7 +52,7 @@
         }
       },
       "description": "Manage ACOS-based appliances of A10 Networks.",
-      "email": "user.localhost2000@gmail.com",
+      "email": "1_user.localhost2000@gmail.com",
       "keywords": [
         "acos",
         "load balancer",
