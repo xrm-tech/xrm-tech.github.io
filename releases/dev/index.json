@@ -15,7 +15,7 @@
       "repo_url": "https://github.com/xrm-tech/xrm-example",
       "ref": "test_pack",
       "content": {
-        "tests": {
+        "actions": {
           "count": 1,
           "resources": [ "test" ]
         }
