@@ -6,7 +6,7 @@
   "packs": {
     "test_pack": {
       "author": "Your Username",
-      "description": "A test pack for StackStorm",
+      "description": "A test pack for XRM",
       "email": "your.email@example.com",
       "keywords": [ "test" ],
       "version": "0.1.0",
@@ -17,7 +17,7 @@
       "content": {
         "actions": {
           "count": 1,
-          "resources": [ "test.py" ]
+          "resources": [ "test" ]
         }
       }
     }
