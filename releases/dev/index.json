@@ -17,7 +17,7 @@
       "content": {
         "actions": {
           "count": 1,
-          "resources": [ "test" ]
+          "resources": [ "test.py" ]
         }
       }
     }
