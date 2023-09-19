@@ -5,7 +5,7 @@
   },
   "packs": {
     "example_pack": {
-      "author": "Your Username",
+      "author": "XRM",
       "content": {
         "actions": {
           "count": 1,
@@ -15,7 +15,7 @@
         }
       },
       "description": "A example pack for XRM",
-      "email": "your.email@example.com",
+      "email": "info@x-rm.ru",
       "keywords": [
         "example",
         "test"
