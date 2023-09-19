@@ -1,0 +1,32 @@
+{
+  "metadata": {
+    "generated_ts": 1694863048,
+    "hash": "a3ab6899d5b965d954f63bcaca1a7dac"
+  },
+  "packs": {
+    "example_pack": {
+      "author": "XRM",
+      "content": {
+        "actions": {
+          "count": 1,
+          "resources": [
+            "greet"
+          ]
+        }
+      },
+      "description": "A example pack for XRM",
+      "email": "info@x-rm.ru",
+      "keywords": [
+        "example",
+        "xrm"
+      ],
+      "name": "example_pack",
+      "python_versions": [
+        "3"
+      ],
+      "ref": "example_pack",
+      "repo_url": "https://github.com/xrm-tech/xrm-example",
+      "version": "0.1.0"
+    }
+  }
+}
