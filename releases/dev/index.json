@@ -1,4 +1,3 @@
-{
   "metadata": {
     "generated_ts": 1694863048,
     "hash": "a3ab6899d5b965d954f63bcaca1a7dac"
@@ -6,20 +5,26 @@
   "packs": {
     "test_pack": {
       "author": "Your Username",
-      "description": "A test pack for XRM",
-      "email": "your.email@example.com",
-      "keywords": [ "test" ],
-      "version": "0.1.0",
-      "name": "test_pack",
-      "python_versions": ["3"],
-      "repo_url": "https://github.com/xrm-tech/xrm-example",
-      "ref": "test_pack",
       "content": {
         "actions": {
           "count": 1,
-          "resources": [ "test" ]
+          "resources": [
+            "test"
+          ]
         }
-      }
+      },
+      "description": "A test pack for XRM",
+      "email": "your.email@example.com",
+      "keywords": [
+        "example",
+        "test"
+      ],
+      "name": "test_pack",
+      "python_versions": [
+        "3"
+      ],
+      "ref": "test_pack",
+      "repo_url": "https://github.com/xrm-tech/xrm-example",
+      "version": "0.1.0"
     }
   }
-}
