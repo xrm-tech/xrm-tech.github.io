@@ -109,11 +109,11 @@ else
     if sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
         echo -e "\e[32mXRM $xrm_ver уже установлен.\e[0m"
     else
-        echo -e "\e[32m1. Создание директории $xrm_ver для X Recovery Manager в каталоге /home\e[0m"
-        sudo mkdir /home/xrm_${ver_path} && cd /home/xrm_${ver_path}
+        echo -e "\e[32m1. Создание директории $xrm_ver для X Recovery Manager\e[0m"
+        sudo mkdir ./xrm_${ver_path} && cd ./xrm_${ver_path}
         echo -e "\e[32m2. Загрузка архива XRM $xrm_ver xrm-docker_${ver_path}.tar.gz\e[0m"
         sudo wget https://files.x-rm.ru/releases/${ver_path}/xrm-docker_${ver_path}.tar.gz
-        echo -e "\e[32m3. Извлечение архива xrm-docker_${ver_path}.tar.gz в директорию home/xrm_${ver_path}\e[0m"
+        echo -e "\e[32m3. Извлечение архива xrm-docker_${ver_path}.tar.gz в директорию xrm_${ver_path}\e[0m"
         sudo tar -zxvf xrm-docker_${ver_path}.tar.gz
 	echo -e "\e[32m4. Развертывание сервисов веб-приложения XRM.\e[0m"
         sudo docker compose up -d
@@ -152,9 +152,9 @@ if sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
     sudo docker images | grep -E "xrm|stackstorm" | awk '{print $3}' | xargs sudo docker rmi
     echo -e "\e[32m3. Удаление volume (dangling) томов, не привязаных к контейнерам.\e[0m"
     sudo docker volume rm $(sudo docker volume ls -qf dangling=true)
-    echo -e "\e[32m4. Удаление директории /home/xrm_${ver_path}, файлов связанных с XRM.\e[0m"
-    sudo rm -rf /home/xrm_${ver_path}
-	echo -e "\e[32mУдаление завершено.\e[0m"
+    echo -e "\e[32m4. Удаление директории xrm_${ver_path}, файлов связанных с XRM.\e[0m"
+    sudo rm -rf ./xrm_${ver_path}
+    echo -e "\e[32mУдаление завершено.\e[0m"
 else
     echo -e "\e[32mXRM не установлен.\e[0m"
 fi
@@ -162,14 +162,14 @@ fi
 
 # Перезапуск контейнеров XRM
 xrm_restart() {
-# Проверка наличия директории /home/xrm_${ver_path}
-if [ ! -d "/home/xrm_${ver_path}" ]; then
+# Проверка наличия директории xrm_${ver_path}
+if [ ! -d "./xrm_${ver_path}" ]; then
     echo "XRM $xrm_ver не установлен."
     return
 fi
 
 # Переход в директорию
-cd /home/xrm_${ver_path}
+cd ./xrm_${ver_path}
 
 # Операции по перезапуску контейнеров
 sudo docker compose down || sudo docker-compose down || su -c "docker-compose down"
@@ -177,119 +177,146 @@ sudo docker compose up -d || sudo docker-compose up -d || su -c "docker-compose 
 
 echo "Произведен перезапуск контейнеров XRM."
 }
+# Функция установки пароля
+set_password () {
+    if [ -d "xrm_${ver_path}" ]; then
+        read -p "Введите имя пользователя: " login
+        read -s -p "Введите пароль: " password
+        echo
+        hashed_password=$(openssl passwd -apr1 "$password")
+        echo "$login:$hashed_password" > "./xrm_${ver_path}/files/htpasswd"
+        echo "Имя пользователя и пароль успешно установлен/изменен."
+    else
+        echo -e "\e[32mXRM не установлен.\e[0m"
+	echo -e "\e[32mИзменить текущую учетную запись вы можете только после установки XRM.\e[0m"
+	fi
+}
 
 # Проверка наличия аргументов командной строки
 if [ $# -eq 1 ]; then
-    choice="$1"
-    case $choice in
-        1)
-            get_pc_info
-            exit
-            ;;
-        2)
-            check_docker
-            exit
-            ;;
-        3)
-            docker_install
-            exit
-            ;;
-        4)
-            xrm_install
-            exit
-            ;;
-        5)
-            xrm_restart
-            exit
-            ;;
-        6)
-            xrm_clear
-            exit
-            ;;
-        *)
-            echo "Неверный аргумент. Допустимые аргументы: 1, 2, 3, 4, 5, 6"
-            exit 1
-            ;;
-    esac
+	choice="$1"
+	case $choice in
+		1)
+			get_pc_info
+			exit
+			;;
+		2)
+			check_docker
+			exit
+			;;
+		3)
+			docker_install
+			exit
+			;;
+		4)
+			xrm_install
+			exit
+			;;
+		5)
+			xrm_restart
+			exit
+			;;
+		6)
+			xrm_clear
+			exit
+			;;
+		7)
+			set_password
+			exit
+			;;
+		*)
+			echo "Неверный аргумент. Допустимые аргументы: 1, 2, 3, 4, 5, 6"
+			exit 1
+			;;
+	esac
 fi
 
 # Основной цикл меню
 while true; do
-    clear
-    echo -e "\e[32m##  ##   #####    ##   ##\e[0m"
-	echo -e "\e[32m ####    ##  ##   ### ###\e[0m"
-	echo -e "\e[32m  ##     #####    ## # ##\e[0m"
-	echo -e "\e[32m ####    ####     ##   ##\e[0m"
-	echo -e "\e[32m##  ##   ## ##    ##   ##\e[0m"
+	clear
+	echo -e "\e[32m##  ##   #####	##   ##\e[0m"
+	echo -e "\e[32m ####	##  ##   ### ###\e[0m"
+	echo -e "\e[32m  ##	 #####	## # ##\e[0m"
+	echo -e "\e[32m ####	####	 ##   ##\e[0m"
+	echo -e "\e[32m##  ##   ## ##	##   ##\e[0m"
 	echo -e "\e[32mX Recovery Manager (XRM) $xrm_ver\e[0m"
 	echo
 	echo "Меню:"
 	echo
 	echo "1. Системные требования"
-    echo "2. Информация об установленных Docker / Docker Compose"
-    echo "3. Установить Docker / Docker Compose (Ubuntu)"
+	echo "2. Информация об установленных Docker / Docker Compose"
+	echo "3. Установить Docker / Docker Compose (Ubuntu)"
 	echo "4. Установить XRM $xrm_ver"
-    echo "5. Перезапустить XRM $xrm_ver"
+	echo "5. Перезапустить XRM $xrm_ver"
 	echo "6. Удалить XRM $xrm_ver"
-	echo "7. Выйти"
-    read -p "Выберите пункт меню: " choice
+	echo "7. Задать пароль на вход в XRM"
+	echo "8. Выйти"
+	read -p "Выберите пункт меню: " choice
 
-    case $choice in
-        1)
-            clear
-            echo -e "\e[32mХарактеристики вашей системы:\e[0m"
-            echo
-			get_pc_info    
+	case $choice in
+		1)
+			clear
+			echo -e "\e[32mХарактеристики вашей системы:\e[0m"
+			echo
+			get_pc_info	
 			echo			
-            read -p "Нажмите Enter, чтобы вернуться в меню..."
-            ;;
-        2)
-            clear
-            echo -e "\e[32mИнформация об установленных Docker / Docker Compose:\e[0m"
-            echo
+			read -p "Нажмите Enter, чтобы вернуться в меню..."
+			;;
+		2)
+			clear
+			echo -e "\e[32mИнформация об установленных Docker / Docker Compose:\e[0m"
+			echo
 			check_docker
 			echo
-            read -p "Нажмите Enter, чтобы вернуться в меню..."
-            ;;
-        3)
+			read -p "Нажмите Enter, чтобы вернуться в меню..."
+			;;
+		3)
 			clear
-            echo -e "\e[32mУстановка Docker / Docker Compose на ОС Ubuntu 22.04 (jammy)\e[0m"
+			echo -e "\e[32mУстановка Docker / Docker Compose на ОС Ubuntu 22.04 (jammy)\e[0m"
 			echo
-            docker_install
+			docker_install
 			echo
-            read -p "Нажмите Enter, чтобы вернуться в меню..."
-            ;;
+			read -p "Нажмите Enter, чтобы вернуться в меню..."
+			;;
 		4)
-            clear
-            echo -e "\e[32mУстановка XRM $xrm_ver в среде контейнеризации Docker.\e[0m"
-			echo
-            xrm_install
-			echo
-            read -p "Нажмите Enter, чтобы вернуться в меню..."
-            ;;
-        5)
 			clear
-            echo -e "\e[32mПерезапуск XRM $xrm_ver в среде контейнеризации Docker.\e[0m"
+			echo -e "\e[32mУстановка XRM $xrm_ver в среде контейнеризации Docker.\e[0m"
 			echo
-            xrm_restart
+			xrm_install
 			echo
-            read -p "Нажмите Enter, чтобы вернуться в меню..."
-            ;;
+			read -p "Нажмите Enter, чтобы вернуться в меню..."
+			;;
+		5)
+			clear
+			echo -e "\e[32mПерезапуск XRM $xrm_ver в среде контейнеризации Docker.\e[0m"
+			echo
+			xrm_restart
+			echo
+			read -p "Нажмите Enter, чтобы вернуться в меню..."
+			;;
 		6)
 			clear
-            echo -e "\e[32mУдаление XRM $xrm_ver из среды контейнеризации Docker.\e[0m"
+			echo -e "\e[32mУдаление XRM $xrm_ver из среды контейнеризации Docker.\e[0m"
 			echo
-            xrm_clear
+			xrm_clear
 			echo
-            read -p "Нажмите Enter, чтобы вернуться в меню..."
-            ;;		
+			read -p "Нажмите Enter, чтобы вернуться в меню..."
+			;;
 		7)
-            echo "Вы вышли из меню установки XRM"
-            exit
-            ;;
-        *)
-            echo "Неверный выбор. Пожалуйста, выберите снова."
-            ;;
-    esac
+			clear
+			echo -e "\e[32mЗадать пароль на вход в XRM.\e[0m"
+			echo
+			set_password
+			echo
+			read -p "Нажмите Enter, чтобы вернуться в меню..."
+			;;
+		8)
+			echo "Вы вышли из меню установки XRM"
+			exit
+			;;
+		*)
+			echo "Неверный выбор. Пожалуйста, выберите снова."
+			;;
+	esac
 
 done
