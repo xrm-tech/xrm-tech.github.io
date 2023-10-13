@@ -177,19 +177,25 @@ sudo docker compose up -d || sudo docker-compose up -d || su -c "docker-compose 
 
 echo "Произведен перезапуск контейнеров XRM."
 }
+
 # Функция установки пароля
 set_password () {
-    if [ -d "xrm_${ver_path}" ]; then
+    if [ -d "./xrm_${ver_path}" ]; then
         read -p "Введите имя пользователя: " login
         read -s -p "Введите пароль: " password
         echo
-        hashed_password=$(openssl passwd -apr1 "$password")
-        echo "$login:$hashed_password" > "./xrm_${ver_path}/files/htpasswd"
-        echo "Имя пользователя и пароль успешно установлен/изменен."
+
+        if [ -n "$login" ] && [ -n "$password" ]; then
+            hashed_password=$(openssl passwd -apr1 "$password")
+            echo "$login:$hashed_password" > "./xrm_${ver_path}/files/htpasswd"
+            echo "Имя пользователя и пароль успешно установлены/изменены."
+        else
+            echo "Имя пользователя и пароль должны содержать хотя бы по одному символу."
+        fi
     else
         echo -e "\e[32mXRM не установлен.\e[0m"
-	echo -e "\e[32mИзменить текущую учетную запись вы можете только после установки XRM.\e[0m"
-	fi
+        echo -e "\e[32mИзменить или добавить учетную запись вы можете только после установки XRM.\e[0m"
+    fi
 }
 
 # Проверка наличия аргументов командной строки
