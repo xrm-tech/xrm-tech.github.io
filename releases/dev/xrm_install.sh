@@ -192,7 +192,7 @@ xrm_restart() {
 	sudo docker compose down || sudo docker-compose down || su -c "docker-compose down"
 	sudo docker compose up -d || sudo docker-compose up -d || su -c "docker-compose up -d"
 
-	echo -e "\e[32mКонтейнеры XRM были перезапущены.\e[0m"
+	echo -e "\e[32mКонтейнеры XRM перезапущены.\e[0m"
 }
 
 # Removing XRM
