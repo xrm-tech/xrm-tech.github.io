@@ -231,6 +231,8 @@ set_password() {
 	fi
 
 	if [ -d "./xrm_${ver_path}" ]; then
+ 		echo -e "\e[32mУстановить/Изменить пароль администратора XRM\e[0m"
+   		echo
 		read -p "Введите имя пользователя: " login
 		read -s -p "Введите пароль: " password
 		echo
@@ -373,7 +375,7 @@ while true; do
 			;;
 		7)
 			clear
-			echo -e "\e[32mУстановить/Изменить парол администратора XRM\e[0m"
+			echo -e "\e[32mУстановить/Изменить пароль администратора XRM\e[0m"
 			echo
 			set_password
 			echo
