@@ -41,7 +41,7 @@ check_docker() {
 		docker_version=$(docker -v | awk '{print $3}')
 		echo "Версия Docker: $docker_version"
 	else
-		echo "Docker - Не установлен"
+		echo -e "\e[31mDocker - Не установлен.\e[0m"
 	fi
 
 	# Checking docker-compose version or docker compose version
@@ -50,13 +50,13 @@ check_docker() {
 	elif docker-compose version &> /dev/null; then
 		docker_compose_version=$(docker-compose version 2>&1 | awk '/version/ {print $4}')
 	else
-		echo "Docker Compose - Не установлен"
+		echo -e "\e[31mDocker Compose - Не установлен.\e[0m"
 	fi
 
 	if [ -n "$docker_compose_version" ]; then
 		echo "Версия Docker Compose: $docker_compose_version"
 	else
-		echo "Docker Compose - Не установлен"
+		echo -e "\e[31mDocker Compose - Не установлен.\e[0m"
 	fi
 	echo
 	echo -e "\e[32mРекомендуемые версии Docker и Docker Compose\e[0m"
@@ -72,30 +72,29 @@ docker_install() {
 		docker_version=$(docker -v | awk '{print $3}')
 		echo -e "\e[32mCреда контейнеризации Docker (версия $docker_version) уже установлена.\e[0m"
 	else
-		echo -e "\e[32m1. Обновляем индексы пакетов apt\e[0m"
+		echo -e "\e[32mОбновляем индексы пакетов apt\e[0m"
 		sudo apt update
 
-		echo -e "\e[32m2. Устанавливаем пакеты, необходимые для работы apt по протоколу HTTPS\e[0m"
+		echo -e "\e[32mУстанавливаем пакеты, необходимые для работы apt по протоколу HTTPS\e[0m"
 		sudo apt install curl software-properties-common ca-certificates apt-transport-https -y
 
-		echo -e "\e[32m3. Добавляем GPG-ключ репозитория Docker\e[0m"
+		echo -e "\e[32mДобавляем GPG-ключ репозитория Docker\e[0m"
 		curl -f -s -S -L https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
 
-		echo -e "\e[32m4. Добавляем репозиторий Docker (для Ubuntu 22.04 - Jammy)\e[0m"
+		echo -e "\e[32mДобавляем репозиторий Docker (для Ubuntu 22.04 - Jammy)\e[0m"
 		sudo add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu jammy stable"
 
-		echo -e "\e[32m5. Обновляем индексы пакетов apt\e[0m"
+		echo -e "\e[32mОбновляем индексы пакетов apt\e[0m"
 		sudo apt update
 
-		echo -e "\e[32m6. Устанавливаем Docker\e[0m"
+		echo -e "\e[32mУстанавливаем Docker\e[0m"
 		sudo apt install docker-ce -y
 
-		echo -e "\e[32mУстанавливаем Docker Compose\e[0m"
-		echo -e "\e[32m7. Загружаем Docker Compose версии 2.17.3\e[0m"
+		echo -e "\e[32mУстанавливаем Docker Compose 2.17.3\e[0m"
 		mkdir -p ~/.docker/cli-plugins/
 		curl -SL https://github.com/docker/compose/releases/download/v2.17.3/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
 
-		echo -e "\e[32m8. Устанавливаем правильные разрешения\e[0m"
+		echo -e "\e[32mУстанавливаем правильные разрешения\e[0m"
 		chmod +x ~/.docker/cli-plugins/docker-compose
 
 		echo -e "\e[32mDocker и Docker Compose установлены.\e[0m"
@@ -105,7 +104,8 @@ docker_install() {
 # Deploying XRM
 xrm_install() {
 	if [ -e "./xrm_${ver_path}/tests/checkpass" ] && ! sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
-		echo -e "\e[32mДиректория xrm_${ver_path} существует, развертывание сервисов веб-приложения XRM.\e[0m"
+		echo -e "\e[32mДиректория xrm_${ver_path} существует.\e[0m"
+  		echo -e "\e[32mРазвертывание сервисов веб-приложения XRM.\e[0m"
 		cd "./xrm_${ver_path}"
 		sudo docker compose up -d
 
@@ -130,7 +130,7 @@ xrm_install() {
 			sleep 1
 		done
 
-		sudo docker exec -it xrm-client st2 pack install https://github.com/xrm-tech/xrm-ovirt-st2=xrm_v1.2
+		sudo docker exec -it xrm-client st2 pack install https://github.com/xrm-tech/xrm-ovirt-st2=devel
 		echo -e "\e[32mУстановка XRM $xrm_ver завершена.\e[0m"
 	else
 		echo
@@ -179,28 +179,11 @@ xrm_install() {
 	fi
 }
 
-# Removing XRM
-xrm_clear() {
-	if sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
-		echo -e "\e[32m1. Остановка и удаление контейнеров, связанных с XRM.\e[0m"
-		sudo docker stop $(sudo docker ps -a | grep "xrm-" | awk '{print $1}') && sudo docker rm $(sudo docker ps -a | grep "xrm-" | awk '{print $1}')
-		echo -e "\e[32m2. Удаление образов контейнеров, связанных с XRM.\e[0m"
-		sudo docker images | grep -E "xrm|stackstorm" | awk '{print $3}' | xargs sudo docker rmi
-		echo -e "\e[32m3. Удаление volume (dangling) томов, не привязанных к контейнерам.\e[0m"
-		sudo docker volume rm $(sudo docker volume ls -qf dangling=true)
-		echo -e "\e[32m4. Удаление директории xrm_${ver_path}, файлов, связанных с XRM.\e[0m"
-		sudo rm -rf "./xrm_${ver_path}"
-		echo -e "\e[32mУдаление завершено.\e[0m"
-	else
-		echo -e "\e[32mXRM не установлен.\e[0m"
-	fi
-}
-
 # Restarting XRM containers
 xrm_restart() {
 	# Checking the presence of a directory xrm_${ver_path}
 	if [ ! -d "./xrm_${ver_path}" ]; then
-		echo "XRM $xrm_ver не установлен."
+		echo -e "\e[31mXRM $xrm_ver не установлен.\e[0m"
 		return
 	fi
 
@@ -209,7 +192,24 @@ xrm_restart() {
 	sudo docker compose down || sudo docker-compose down || su -c "docker-compose down"
 	sudo docker compose up -d || sudo docker-compose up -d || su -c "docker-compose up -d"
 
-	echo "Произведен перезапуск контейнеров XRM."
+	echo -e "\e[32mКонтейнеры XRM были перезапущены.\e[0m"
+}
+
+# Removing XRM
+xrm_clear() {
+	if sudo docker ps -a --format '{{.Names}}' | grep -q 'xrm-'; then
+		echo -e "\e[32mОстановка и удаление контейнеров, связанных с XRM.\e[0m"
+		sudo docker stop $(sudo docker ps -a | grep "xrm-" | awk '{print $1}') && sudo docker rm $(sudo docker ps -a | grep "xrm-" | awk '{print $1}')
+		echo -e "\e[32mУдаление образов контейнеров, связанных с XRM.\e[0m"
+		sudo docker images | grep -E "xrm|stackstorm" | awk '{print $3}' | xargs sudo docker rmi
+		echo -e "\e[32mУдаление volume (dangling) томов, не привязанных к контейнерам.\e[0m"
+		sudo docker volume rm $(sudo docker volume ls -qf dangling=true)
+		echo -e "\e[32mУдаление директории xrm_${ver_path}, файлов, связанных с XRM.\e[0m"
+		sudo rm -rf "./xrm_${ver_path}"
+		echo -e "\e[32mУдаление завершено.\e[0m"
+	else
+		echo -e "\e[31mXRM не установлен.\e[0m"
+	fi
 }
 
 # Setting a password
@@ -298,12 +298,12 @@ fi
 # Main menu cycle
 while true; do
 	clear
-	echo -e "\e[32m##  ##   #####	##   ##\e[0m"
-	echo -e "\e[32m ####	##  ##   ### ###\e[0m"
-	echo -e "\e[32m  ##	 #####	## # ##\e[0m"
-	echo -e "\e[32m ####	####	 ##   ##\e[0m"
-	echo -e "\e[32m##  ##   ## ##	##   ##\e[0m"
-	echo -e "\e[32mX Recovery Manager (XRM) $xrm_ver\e[0m"
+	echo -e "\e[32m##  ##   #####   ##   ##\e[0m"
+	echo -e "\e[32m ####    ##  ##  ### ###\e[0m"
+	echo -e "\e[32m  ##     #####   ## # ##\e[0m"
+	echo -e "\e[32m ####    ####    ##   ##\e[0m"
+	echo -e "\e[32m##  ##   ## ##   ##   ##\e[0m"
+	echo -e "\e[31mX Recovery Manager (XRM) $xrm_ver\e[0m"
 	echo
 	echo "Меню:"
 	echo
@@ -313,7 +313,7 @@ while true; do
 	echo "4. Установить XRM $xrm_ver"
 	echo "5. Перезапустить XRM $xrm_ver"
 	echo "6. Удалить XRM $xrm_ver"
-	echo "7. Установить пароль на вход в XRM"
+	echo "7. Установить пароль администратора XRM"
 	echo "8. Выйти"
 	read -p "Выберите пункт меню: " choice
 
@@ -368,7 +368,7 @@ while true; do
 			;;
 		7)
 			clear
-			echo -e "\e[32mУстановка/изменение пароля на вход в XRM\e[0m"
+			echo -e "\e[32mУстановить/Изменить парол администратора XRM\e[0m"
 			echo
 			set_password
 			echo
