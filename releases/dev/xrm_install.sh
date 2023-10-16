@@ -130,7 +130,7 @@ xrm_install() {
 			sleep 1
 		done
 
-		sudo docker exec -it xrm-client st2 pack install https://github.com/xrm-tech/xrm-ovirt-st2=devel
+		sudo docker exec -it xrm-client st2 pack install "https://github.com/xrm-tech/xrm-ovirt-st2=xrm_v1.2"
 		echo -e "\e[32mУстановка XRM $xrm_ver завершена.\e[0m"
 	else
 		echo
@@ -235,7 +235,7 @@ set_password() {
 			if [ "$password" = "$password_confirmation" ]; then
 				break
 			else
-				echo "Пароли не совпадают. Попробуйте снова."
+				echo -e "\e[31mПароли не совпадают. Попробуйте снова.\e[0m"
 				read -s -p "Введите пароль: " password
 				echo
 			fi
@@ -244,14 +244,14 @@ set_password() {
 		if [ -n "$login" ] && [ -n "$password" ]; then
 			hashed_password=$(openssl passwd -apr1 "$password")
 			echo "$login:$hashed_password" > "./xrm_${ver_path}/files/htpasswd"
-			echo "Имя пользователя и пароль успешно установлены/изменены."
+			echo -e "\e[32mИмя пользователя и пароль успешно установлены/изменены.\e[0m"
 			sed -i "s/^username = .*/username = $login/" "./xrm_${ver_path}/files/st2-cli.conf"
 			sed -i "s/^password = .*/password = $password/" "./xrm_${ver_path}/files/st2-cli.conf"
 		else
-			echo "Пароль не задан. Имя пользователя и пароль должны содержать минимум 1 символ."
+			echo -e "\e[31mПароль не задан. Имя пользователя/пароль должны содержать минимум 1 символ.\e[0m"
 		fi
 	else
-		echo -e "\e[32mXRM не установлен.\e[0m"
+		echo -e "\e[31mXRM не установлен.\e[0m"
 		echo -e "\e[32mИзменить или добавить учетную запись вы можете только после установки XRM.\e[0m"
 	fi
 }
