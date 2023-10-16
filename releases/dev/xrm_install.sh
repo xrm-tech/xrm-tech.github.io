@@ -5,6 +5,8 @@ xrm_ver="ver. Dev"
 # "dev", "v1_1", "v1_2" ...
 ver_path="dev"
 ver_url="dev"
+
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 	
 # Output of technical information
 get_pc_info() {
@@ -144,6 +146,7 @@ xrm_install() {
 			echo -e "\e[32mXRM $xrm_ver уже установлен.\e[0m"
 		else
 			echo -e "\e[32mСоздание директории xrm_${ver_path} для X Recovery Manager\e[0m"
+   			cd "$script_dir"
 			sudo mkdir -p "./xrm_${ver_path}" && cd "./xrm_${ver_path}"
 			echo -e "\e[32mЗагрузка архива XRM $xrm_ver xrm-docker_${ver_path}.tar.gz\e[0m"
 			sudo wget "https://files.x-rm.ru/releases/$ver_url/xrm-docker_${ver_path}.tar.gz"
@@ -205,6 +208,7 @@ xrm_clear() {
 		echo -e "\e[32mУдаление volume (dangling) томов, не привязанных к контейнерам.\e[0m"
 		sudo docker volume rm $(sudo docker volume ls -qf dangling=true)
 		echo -e "\e[32mУдаление директории xrm_${ver_path}, файлов, связанных с XRM.\e[0m"
+  		cd "$script_dir"
 		sudo rm -rf "./xrm_${ver_path}"
 		echo -e "\e[32mУдаление завершено.\e[0m"
 	else
@@ -215,6 +219,7 @@ xrm_clear() {
 # Setting a password
 set_password() {
 	if [ ! -d "./xrm_${ver_path}" ]; then
+ 		cd "$script_dir"
 		sudo mkdir "./xrm_${ver_path}" && cd "./xrm_${ver_path}"
 		sudo wget "https://files.x-rm.ru/releases/$ver_url/xrm-docker_${ver_path}.tar.gz"
 		sudo tar -zxvf "xrm-docker_${ver_path}.tar.gz"
