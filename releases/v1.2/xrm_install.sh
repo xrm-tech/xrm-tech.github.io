@@ -310,7 +310,7 @@ while true; do
 	echo -e "\e[32m  ##     #####   ## # ##\e[0m"
 	echo -e "\e[32m ####    ####    ##   ##\e[0m"
 	echo -e "\e[32m##  ##   ## ##   ##   ##\e[0m"
-	echo -e "\e[31mX Recovery Manager (XRM) $xrm_ver\e[0m"
+	echo -e "\e[97mX Recovery Manager (XRM) $xrm_ver\e[0m"
 	echo
 	echo "Меню:"
 	echo
