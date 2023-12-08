@@ -132,7 +132,7 @@ xrm_install() {
 			sleep 1
 		done
 
-		sudo docker exec -it xrm-client st2 pack install "https://github.com/xrm-tech/xrm-ovirt-st2=xrm_v1.2"
+		sudo docker exec -it xrm-client st2 pack install "https://github.com/xrm-tech/xrm-ovirt-st2=xrm_v1.2.1"
 		echo -e "\e[32mУстановка XRM $xrm_ver завершена.\e[0m"
 	else
 		echo
