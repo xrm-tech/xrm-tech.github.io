@@ -177,7 +177,7 @@ xrm_install() {
 			done
 			sudo docker exec -it xrm-client st2 pack install "https://github.com/xrm-tech/xrm-ovirt-st2=xrm_v1.2.1"
 			
-			echo -e "\e[32mУстановка  XRM oVirt pack\e[0m"
+			echo -e "\e[32mУстановка  XRM OpenUDS pack\e[0m"
 			seconds=25
 			for ((i=seconds; i>=1; i--)); do
 				# Pause before installing oVirt
