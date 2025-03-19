@@ -9,12 +9,15 @@ REQUIRED_CPU_CORES=4
 REQUIRED_RAM_GB=16
 REQUIRED_DISK_GB=50
 MAX_MAP_COUNT=262144
-INSTALL_DIR="/opt/xrm-director"
-DOCKER_COMPOSE_YML="${INSTALL_DIR}/docker/docker-compose.yml"
-DOCKER_COMPOSE_GPU_YML="${INSTALL_DIR}/docker/docker-compose-gpu.yml"
-DOCKER_ENV="${INSTALL_DIR}/docker/.env"
+INSTALL_DIR="/opt/xrm-director/docker"
+# Обновляем пути к файлам для директории docker
+DOCKER_DIR="${INSTALL_DIR}"
+DOCKER_COMPOSE_YML="${DOCKER_DIR}/docker-compose.yml"
+DOCKER_COMPOSE_GPU_YML="${DOCKER_DIR}/docker-compose-gpu.yml"
+DOCKER_ENV="${DOCKER_DIR}/.env"
 RAGFLOW_SLIM_IMAGE="infiniflow/ragflow:v0.17.2-slim"
 RAGFLOW_FULL_IMAGE="infiniflow/ragflow:v0.17.2"
+OLLAMA_LLM_MODEL="akdengi/saiga-gemma2"
 
 # ======= Настройка обработки ошибок и выхода =======
 set -o pipefail
@@ -25,7 +28,7 @@ trap 'echo "Скрипт прерван. Выход..."; exit 1' SIGINT SIGTERM
 log_message() {
     local level="$1"
     local message="$2"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] ${message}"
+    # Только запись в лог-файл без вывода на экран
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] ${message}" >> "$LOG_FILE"
 }
 
@@ -87,7 +90,7 @@ check_version() {
         if (( 10#${ver1[i]} > 10#${ver2[i]} )); then
             return 0
         fi
-        if (( 10#${ver1[i]} < 10#${ver2[i]} )); then
+        if (( 10#${ver2[i]} < 10#${ver1[i]} )); then
             return 1
         fi
     done
@@ -135,6 +138,7 @@ check_system_requirements() {
         echo "5. Docker Compose: Не установлен"
     fi
     echo "===================================================="
+    show_return_to_menu_message
 }
 
 # Функция для проверки установленных Docker и Docker Compose
@@ -192,6 +196,7 @@ check_docker_info() {
         fi
     fi
     echo "===================================================="
+    show_return_to_menu_message
 }
 
 # Функция для установки Docker и Docker Compose
@@ -246,13 +251,112 @@ install_docker() {
     
     log_message "INFO" "Docker и Docker Compose успешно установлены"
     echo "Docker и Docker Compose успешно установлены"
+    
+    echo "===================================================="
+    show_return_to_menu_message
+}
+
+# Функция для диагностики проблем с контейнером
+diagnose_container_issues() {
+    local container_name="$1"
+    echo "Диагностика контейнера $container_name..."
+    
+    # Проверка статуса контейнера
+    local container_status=$(docker inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null)
+    echo "Статус контейнера: $container_status"
+    
+    # Проверка логов контейнера, даже если он не запустился полностью
+    echo "Логи контейнера:"
+    docker logs "$container_name" 2>&1 || echo "Не удалось получить логи контейнера"
+    
+    # Проверка доступных ресурсов
+    echo "Свободная память:"
+    free -h
+    
+    echo "Свободное место на диске:"
+    df -h /
+    
+    # Проверка прав доступа и владельца директорий
+    if docker inspect --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' "$container_name" 2>/dev/null | grep -q .; then
+        echo "Проверка томов контейнера:"
+        for vol in $(docker inspect --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' "$container_name"); do
+            if [ -e "$vol" ]; then
+                echo "Том $vol: $(ls -ld "$vol")"
+            else
+                echo "Том $vol не существует"
+            fi
+        done
+    fi
+
+    # Рекомендации по решению
+    echo "Рекомендации по устранению проблемы:"
+    echo "1. Убедитесь, что у системы достаточно ресурсов (RAM, CPU)"
+    echo "2. Проверьте права доступа к томам и файлам контейнера"
+    echo "3. Проверьте все зависимости контейнера"
+    echo "4. Убедитесь, что порты не заняты другими сервисами"
 }
 
 # Функция для установки XRM Director
 install_xrm_director() {
     log_message "INFO" "Установка XRM Director..."
-    
+
     echo "====== Установка XRM Director ======"
+
+    # Проверяем, установлен ли уже XRM Director
+    if docker ps -a | grep -q "ragflow"; then
+        log_message "WARNING" "Обнаружена существующая установка XRM Director"
+        echo "ВНИМАНИЕ: XRM Director уже установлен. Обнаружены контейнеры ragflow."
+        echo "Хотите продолжить и переустановить XRM Director? (д/н)"
+        read -r reinstall_choice
+        if [[ ! "$reinstall_choice" =~ ^[Дд]$ ]]; then
+            echo "Установка отменена пользователем."
+            return 0
+        fi
+        echo "Продолжаем установку..."
+    fi
+
+    # Создание директории для установки
+    mkdir -p "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+    
+    # Удаляем существующие файлы, если они есть
+    echo "Очистка директории установки..."
+    rm -rf "$INSTALL_DIR"/*
+    
+    # Скачивание архива с файлами XRM Director
+    echo "Скачивание архива с файлами XRM Director..."
+    if ! curl -sSf https://files.x-rm.ru/xrm_director/docker/docker.tar.gz -o "$INSTALL_DIR/docker.tar.gz"; then
+        log_message "ERROR" "Не удалось скачать архив с файлами XRM Director"
+        echo "Ошибка: Не удалось скачать архив с файлами XRM Director"
+        return 1
+    fi
+    log_message "INFO" "Архив успешно скачан: $INSTALL_DIR/docker.tar.gz"
+    
+    # Распаковка архива
+    echo "Распаковка архива..."
+    mkdir -p "$DOCKER_DIR"
+    if ! tar -xzf docker.tar.gz --strip-components=0; then
+        log_message "ERROR" "Не удалось распаковать архив"
+        echo "Ошибка: Не удалось распаковать архив"
+        return 1
+    fi
+    
+    # Вывод списка распакованных файлов
+    echo "Распакованные файлы:"
+    ls -la "$INSTALL_DIR"
+    
+    # Удаление архива
+    rm -f "$INSTALL_DIR/docker.tar.gz"
+    log_message "INFO" "Архив успешно распакован в $INSTALL_DIR"
+    
+    # Проверка наличия обязательных файлов
+    if [ ! -f ".env" ] || [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose-gpu.yml" ]; then
+        log_message "ERROR" "Обязательные файлы не найдены после распаковки архива"
+        echo "Ошибка: Обязательные файлы (.env, docker-compose.yml, docker-compose-gpu.yml) не найдены"
+        echo "Содержимое директории $INSTALL_DIR:"
+        ls -la "$INSTALL_DIR"
+        return 1
+    fi
     
     # Проверка и настройка vm.max_map_count
     local current_map_count=$(cat /proc/sys/vm/max_map_count)
@@ -277,88 +381,79 @@ install_xrm_director() {
             sed -i "s/vm.max_map_count.*/vm.max_map_count = $MAX_MAP_COUNT/" /etc/sysctl.conf
         fi
     fi
-    
-    # Выбор версии RAGFlow
-    echo "Выберите версию RAGFlow:"
-    echo "1. Slim (v0.17.2-slim) - облегченная версия"
-    echo "2. Full (v0.17.2) - полная версия"
-    read -r version_choice
-    
-    # Выбор режима работы (CPU или GPU)
-    echo "Выберите режим работы:"
-    echo "1. CPU - использовать процессор для обработки задач"
-    echo "2. GPU - использовать графический процессор (требуется NVIDIA)"
-    read -r gpu_choice
-    
-    # Создание директории для установки
-    mkdir -p "${INSTALL_DIR}/docker"
-    
-    # Создание файла .env
-    cat > "$DOCKER_ENV" <<EOF
-# Файл конфигурации для XRM Director
-RAGFLOW_IMAGE=$([ "$version_choice" -eq 1 ] && echo "$RAGFLOW_SLIM_IMAGE" || echo "$RAGFLOW_FULL_IMAGE")
-EOF
-    
-    log_message "INFO" "Создан файл конфигурации: $DOCKER_ENV"
-    echo "Создан файл конфигурации: $DOCKER_ENV"
-    
-    # Создание файла docker-compose.yml
-    cat > "$DOCKER_COMPOSE_YML" <<EOF
-version: '3'
-services:
-  ragflow-server:
-    image: \${RAGFLOW_IMAGE}
-    container_name: ragflow-server
-    restart: always
-    ports:
-      - "80:80"
-    environment:
-      - TZ=Asia/Shanghai
-EOF
 
-    log_message "INFO" "Создан файл docker-compose.yml: $DOCKER_COMPOSE_YML"
-    echo "Создан файл docker-compose.yml: $DOCKER_COMPOSE_YML"
+    # Выбор версии RAGFlow
+    while true; do
+        echo "Выберите версию RAGFlow:"
+        echo "0. Вернуться в главное меню"
+        echo "1. Slim (v0.17.2-slim) - облегченная версия"
+        echo "2. Full (v0.17.2) - полная версия"
+        read -r version_choice
+        
+        # Проверяем выбор
+        if [[ "$version_choice" == "0" ]]; then
+            echo "Возврат в главное меню..."
+            return 0
+        elif [[ "$version_choice" =~ ^[1-2]$ ]]; then
+            break
+        else
+            echo "Ошибка: Необходимо выбрать вариант 0, 1 или 2. Повторите ввод."
+        fi
+    done
     
-    # Создание файла docker-compose-gpu.yml если выбран GPU режим
-    if [ "$gpu_choice" -eq 2 ]; then
-        cat > "$DOCKER_COMPOSE_GPU_YML" <<EOF
-version: '3'
-services:
-  ragflow-server:
-    image: \${RAGFLOW_IMAGE}
-    container_name: ragflow-server
-    restart: always
-    ports:
-      - "80:80"
-    environment:
-      - TZ=Asia/Shanghai
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-EOF
-        log_message "INFO" "Создан файл docker-compose-gpu.yml: $DOCKER_COMPOSE_GPU_YML"
-        echo "Создан файл docker-compose-gpu.yml: $DOCKER_COMPOSE_GPU_YML"
+    # Настройка файла .env
+    if [ "$version_choice" -eq 1 ]; then
+        # Убедимся, что Slim версия раскомментирована, а Full закомментирована
+        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2-slim/ s/^# *//' .env
+        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2$/ s/^[^#]/#&/' .env
+        log_message "INFO" "Выбрана версия Slim (v0.17.2-slim)"
+        echo "Выбрана версия Slim (v0.17.2-slim)"
+    elif [ "$version_choice" -eq 2 ]; then
+        # Убедимся, что Full версия раскомментирована, а Slim закомментирована
+        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2-slim/ s/^[^#]/#&/' .env
+        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2$/ s/^# *//' .env
+        log_message "INFO" "Выбрана версия Full (v0.17.2)"
+        echo "Выбрана версия Full (v0.17.2)"
+    else
+        log_message "ERROR" "Неверный выбор версии"
+        echo "Неверный выбор версии. Установка отменена."
+        return 1
     fi
     
-    # Запуск контейнеров
-    echo "Запуск XRM Director..."
-    cd "$INSTALL_DIR"
+    # Выбор режима работы (CPU или GPU)
+    while true; do
+        echo "Выберите режим работы:"
+        echo "0. Вернуться в главное меню"
+        echo "1. CPU - использовать процессор для обработки задач"
+        echo "2. GPU - использовать графический процессор (требуется NVIDIA)"
+        read -r gpu_choice
+        
+        # Проверяем выбор
+        if [[ "$gpu_choice" == "0" ]]; then
+            echo "Возврат в главное меню..."
+            return 0
+        elif [[ "$gpu_choice" =~ ^[1-2]$ ]]; then
+            break
+        else
+            echo "Ошибка: Необходимо выбрать вариант 0, 1 или 2. Повторите ввод."
+        fi
+    done
     
+    # Запуск контейнеров
+        
     if [ "$gpu_choice" -eq 2 ]; then
-        log_message "INFO" "Запуск XRM Director с GPU"
-        echo "Запуск XRM Director с GPU..."
+        log_message "INFO" "Установка XRM Director с GPU"
+        echo "Установка XRM Director (GPU)..."
+        
         if ! docker compose -f docker-compose-gpu.yml up -d; then
             log_message "ERROR" "Не удалось запустить XRM Director с GPU"
             echo "Ошибка: Не удалось запустить XRM Director с GPU"
             return 1
         fi
     else
-        log_message "INFO" "Запуск XRM Director с CPU"
-        echo "Запуск XRM Director с CPU..."
+        log_message "INFO" "Установка XRM Director (CPU)"
+        echo "Установка XRM Director с CPU..."
+        
         if ! docker compose -f docker-compose.yml up -d; then
             log_message "ERROR" "Не удалось запустить XRM Director с CPU"
             echo "Ошибка: Не удалось запустить XRM Director с CPU"
@@ -366,15 +461,58 @@ EOF
         fi
     fi
     
-    # Проверка запуска контейнера
+    # Проверка запуска контейнера ragflow-server
     echo "Проверка запуска контейнера ragflow-server..."
     sleep 5
     
-    # Ожидание запуска ragflow-server (макс. 60 секунд)
+    # Проверка, что контейнер действительно запущен, а не только создан
+    local container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server 2>/dev/null)
+    if [ "$container_status" != "running" ]; then
+        log_message "ERROR" "Контейнер ragflow-server не запустился (статус: $container_status)"
+        echo "ОШИБКА: Контейнер ragflow-server не запустился. Текущий статус: $container_status"
+        echo "Выполняем диагностику..."
+        diagnose_container_issues "ragflow-server"
+        
+        echo "Пробуем исправить проблему..."
+        # Попытка исправить права доступа на директории
+        docker_user_id=$(docker inspect --format '{{.Config.User}}' ragflow-server)
+        if [ -z "$docker_user_id" ]; then
+            docker_user_id="root"
+        fi
+        echo "Контейнер работает от пользователя: $docker_user_id"
+        
+        # Обновление прав доступа для всех томов
+        for vol in $(docker inspect --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' ragflow-server); do
+            if [ -e "$vol" ]; then
+                echo "Обновление прав для тома $vol"
+                chmod -R 777 "$vol" || echo "Не удалось обновить права для $vol"
+            fi
+        done
+        
+        # Перезапуск контейнера
+        echo "Перезапуск контейнера ragflow-server..."
+        docker restart ragflow-server
+        sleep 5
+        
+        # Повторная проверка статуса
+        container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server 2>/dev/null)
+        if [ "$container_status" != "running" ]; then
+            log_message "ERROR" "Контейнер ragflow-server все еще не запущен после исправлений"
+            echo "ОШИБКА: Контейнер ragflow-server все еще не запущен после исправлений."
+            echo "Пожалуйста, проверьте логи Docker для дополнительной информации:"
+            echo "docker logs ragflow-server"
+            return 1
+        else
+            log_message "INFO" "Контейнер ragflow-server успешно запущен после исправлений"
+            echo "Контейнер ragflow-server успешно запущен после исправлений!"
+        fi
+    fi
+    
+    # Ожидание полной инициализации ragflow-server (макс. 60 секунд)
     echo "Ожидание запуска сервера (это может занять некоторое время)..."
     for i in {1..12}; do
-        if docker logs ragflow-server 2>&1 | grep -q "Running on all addresses (0.0.0.0)"; then
-            echo "Сервер успешно запущен!"
+        if docker logs ragflow-server 2>&1 | grep "* Running on all addresses (0.0.0.0)"; then
+            echo "Сервер ragflow-server успешно запущен!"
             break
         fi
         if [ "$i" -eq 12 ]; then
@@ -404,9 +542,9 @@ EOF
     fi
     
     # Установка модели в Ollama
-    echo "Установка модели akdengi/saiga-gemma2 в Ollama..."
+    echo "Установка модели $OLLAMA_LLM_MODEL в Ollama..."
     sleep 5
-    if ! docker exec ollama ollama run akdengi/saiga-gemma2; then
+    if ! docker exec ollama ollama run $OLLAMA_LLM_MODEL; then
         log_message "ERROR" "Не удалось установить модель в Ollama"
         echo "Ошибка: Не удалось установить модель в Ollama"
         return 1
@@ -419,7 +557,9 @@ EOF
     echo "===================================================="
     echo "XRM Director успешно установлен!"
     echo "Доступ к веб-интерфейсу: http://$server_ip"
+    echo "Ollama API доступен по адресу: http://$server_ip:11434"
     echo "===================================================="
+    show_return_to_menu_message
 }
 
 # Функция для перезапуска XRM Director
@@ -428,38 +568,159 @@ restart_xrm_director() {
     
     echo "====== Перезапуск XRM Director ======"
     
-    # Проверка наличия директории установки
-    if [ ! -d "$INSTALL_DIR" ]; then
-        log_message "ERROR" "Директория установки XRM Director не найдена"
-        echo "Ошибка: XRM Director не установлен или директория установки не найдена"
+    # Проверка наличия контейнеров
+    if ! docker ps -a | grep -q -E 'ragflow|ollama'; then
+        log_message "WARNING" "Контейнеры XRM Director не найдены"
+        echo "Контейнеры XRM Director не найдены"
+        show_return_to_menu_message
         return 1
     fi
     
-    # Перезапуск контейнеров
-    cd "$INSTALL_DIR"
-    
-    # Определение используемого docker-compose файла
-    local compose_file="docker-compose.yml"
-    if [ -f "$DOCKER_COMPOSE_GPU_YML" ] && docker compose -f "$DOCKER_COMPOSE_GPU_YML" ps | grep -q "ragflow-server"; then
-        compose_file="docker-compose-gpu.yml"
+    # Получение и перезапуск всех контейнеров с именем, содержащим "ragflow"
+    local ragflow_containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow")
+    if [ -n "$ragflow_containers" ]; then
+        echo "Перезапуск контейнеров ragflow..."
+        for container in $ragflow_containers; do
+            echo "Перезапуск контейнера $container..."
+            if ! docker restart "$container"; then
+                log_message "ERROR" "Не удалось перезапустить контейнер $container"
+                echo "Ошибка: не удалось перезапустить контейнер $container"
+                diagnose_container_issues "$container"
+            else
+                log_message "INFO" "Контейнер $container успешно перезапущен"
+                echo "Контейнер $container успешно перезапущен"
+                
+                # Проверка статуса после перезапуска
+                sleep 3
+                local container_status=$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null)
+                if [ "$container_status" != "running" ]; then
+                    log_message "ERROR" "Контейнер $container не запустился после перезапуска"
+                    echo "ОШИБКА: Контейнер $container не запустился после перезапуска."
+                    diagnose_container_issues "$container"
+                fi
+            fi
+        done
+    else
+        echo "Контейнеры ragflow не обнаружены"
     fi
     
-    echo "Перезапуск XRM Director с использованием $compose_file..."
-    if ! docker compose -f "$compose_file" restart; then
-        log_message "ERROR" "Не удалось перезапустить XRM Director"
-        echo "Ошибка: Не удалось перезапустить XRM Director"
-        return 1
-    fi
-    
-    # Перезапуск контейнера Ollama
-    echo "Перезапуск контейнера Ollama..."
-    if ! docker restart ollama; then
-        log_message "ERROR" "Не удалось перезапустить контейнер Ollama"
-        echo "Ошибка: Не удалось перезапустить контейнер Ollama"
+    # Перезапуск контейнера Ollama, если он существует
+    if docker ps -a --format '{{.Names}}' | grep -q "ollama"; then
+        echo "Перезапуск контейнера Ollama..."
+        if ! docker restart ollama; then
+            log_message "ERROR" "Не удалось перезапустить контейнер Ollama"
+            echo "Ошибка: не удалось перезапустить контейнер Ollama"
+        else
+            log_message "INFO" "Контейнер Ollama успешно перезапущен"
+            echo "Контейнер Ollama успешно перезапущен"
+        fi
+    else
+        echo "Контейнер Ollama не обнаружен"
     fi
     
     log_message "INFO" "XRM Director успешно перезапущен"
     echo "XRM Director успешно перезапущен"
+    
+    echo "===================================================="
+    show_return_to_menu_message
+}
+
+# Функция для удаления XRM Director
+remove_xrm_director() {
+    log_message "INFO" "Удаление XRM Director..."
+    
+    echo "====== Удаление XRM Director ======"
+    
+    # Проверяем наличие контейнеров ragflow
+    if ! docker ps -a | grep -q "ragflow"; then
+        log_message "WARNING" "Контейнеры XRM Director не найдены"
+        echo "Контейнеры XRM Director не найдены."
+        
+        # Проверка наличия директории установки для удаления
+        if [ -d "$INSTALL_DIR" ]; then
+            echo "Найдена директория установки. Хотите удалить её? (д/н)"
+            read -r remove_dir
+            if [[ "$remove_dir" =~ ^[Дд]$ ]]; then
+                rm -rf "$INSTALL_DIR"
+                log_message "INFO" "Директория установки $INSTALL_DIR удалена"
+                echo "Директория установки $INSTALL_DIR удалена"
+            fi
+        fi
+        
+        show_return_to_menu_message
+        return 1
+    fi
+    
+    # Запрос подтверждения на удаление
+    echo "ВНИМАНИЕ! Это действие удалит все контейнеры XRM Director, тома и файлы."
+    echo "Хотите продолжить удаление? (д/н)"
+    read -r confirm
+    
+    if [[ ! "$confirm" =~ ^[Дд]$ ]]; then
+        echo "Удаление отменено пользователем."
+        return 0
+    fi
+    
+    # Получение списка контейнеров с ragflow в имени
+    local containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow")
+    
+    # Сбор информации о томах, подключенных к контейнерам с ragflow
+    local volumes_to_remove=()
+    
+    echo "Получение списка томов, подключенных к контейнерам XRM Director..."
+    for container in $containers; do
+        echo "Контейнер: $container"
+        
+        # Получение списка томов для контейнера
+        local container_volumes=$(docker inspect "$container" --format='{{range .Mounts}}{{.Name}}{{"\n"}}{{end}}' | grep -v "^$")
+        
+        if [ -n "$container_volumes" ]; then
+            echo "Тома, подключенные к контейнеру $container:"
+            echo "$container_volumes"
+            
+            # Добавляем тома в общий список для удаления
+            for vol in $container_volumes; do
+                volumes_to_remove+=("$vol")
+            done
+        fi
+    done
+    
+    # Остановка контейнеров с ragflow
+    echo "Остановка контейнеров XRM Director..."
+    docker stop $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
+    
+    # Удаление контейнеров с ragflow
+    echo "Удаление контейнеров XRM Director..."
+    docker rm $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
+    
+    # Остановка и удаление контейнера Ollama, если он существует
+    if docker ps -a --format '{{.Names}}' | grep -q "ollama"; then
+        echo "Остановка и удаление контейнера Ollama..."
+        docker stop ollama 2>/dev/null
+        docker rm ollama 2>/dev/null
+    fi
+    
+    # Удаление томов
+    if [ ${#volumes_to_remove[@]} -gt 0 ]; then
+        echo "Удаление томов, связанных с XRM Director..."
+        for vol in "${volumes_to_remove[@]}"; do
+            echo "Удаление тома: $vol"
+            docker volume rm "$vol" 2>/dev/null
+        done
+    fi
+    
+    # Удаление директории установки
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "Удаление директории установки..."
+        rm -rf "$INSTALL_DIR"
+        log_message "INFO" "Директория установки $INSTALL_DIR удалена"
+    fi
+    
+    log_message "INFO" "XRM Director успешно удален"
+    echo "===================================================="
+    echo "XRM Director и все связанные с ним компоненты успешно удалены!"
+    echo "===================================================="
+    show_return_to_menu_message
 }
 
 # Функция для вывода статуса XRM Director
@@ -475,26 +736,53 @@ xrm_director_status() {
     fi
     
     # Проверка логов ragflow-server
-    echo -e "\nПоследние логи ragflow-server:"
+    echo -е "\nПоследние логи ragflow-server:"
     if ! docker logs --tail 10 ragflow-server 2>/dev/null; then
         echo "Контейнер ragflow-server не запущен или не найден"
     fi
     
     # Проверка логов ollama
-    echo -e "\nПоследние логи ollama:"
+    echo -е "\nПоследние логи ollama:"
     if ! docker logs --tail 10 ollama 2>/dev/null; then
         echo "Контейнер ollama не запущен или не найден"
     fi
     
     # Отображение IP-адреса и портов
-    echo -e "\nИнформация о доступе:"
+    echo -е "\nИнформация о доступе:"
     local server_ip=$(hostname -I | awk '{print $1}')
     echo "XRM Director доступен по адресу: http://$server_ip"
     echo "Ollama API доступен по адресу: http://$server_ip:11434"
     
     # Проверка использования ресурсов
-    echo -e "\nИспользование ресурсов контейнерами:"
+    echo -е "\nИспользование ресурсов контейнерами:"
     docker stats --no-stream ragflow-server ollama 2>/dev/null || echo "Не удалось получить статистику контейнеров"
+    
+    # Проверка статуса контейнеров c подробной информацией
+    echo "Подробный статус контейнеров:"
+    docker ps -a | grep -E 'ragflow|ollama' || echo "Контейнеры XRM Director не найдены"
+    
+    echo -e "\nСтатус контейнера ragflow-server:"
+    if docker ps -a --format '{{.Names}}' | grep -q "ragflow-server"; then
+        container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server)
+        echo "Статус: $container_status"
+        
+        if [ "$container_status" != "running" ]; then
+            echo "ВНИМАНИЕ: Контейнер ragflow-server не запущен!"
+            diagnose_container_issues "ragflow-server"
+        fi
+    else
+        echo "Контейнер ragflow-server не найден"
+    fi
+    
+    echo "===================================================="
+    show_return_to_menu_message
+}
+
+# Функция для отображения сообщения о возврате в главное меню
+show_return_to_menu_message() {
+    echo -e "\n===================================================="
+    echo "Нажмите Enter для возврата в главное меню..."
+    read -r
 }
 
 # Функция вывода интерактивного меню
@@ -511,7 +799,7 @@ show_menu() {
     echo "3. Установить Docker / Docker Compose (RedOS)"
     echo "4. Установить XRM Director"
     echo "5. Перезапустить XRM Director"
-    echo "6. XRM Director"
+    echo "6. Удалить XRM Director"
     echo "7. Выйти"
     echo ""
     echo -n "Выберите пункт меню: "
@@ -532,33 +820,21 @@ while true; do
     case $choice in
         1)
             check_system_requirements
-            echo -e "\nНажмите Enter для продолжения..."
-            read -r
             ;;
         2)
             check_docker_info
-            echo -e "\nНажмите Enter для продолжения..."
-            read -r
             ;;
         3)
             install_docker
-            echo -e "\nНажмите Enter для продолжения..."
-            read -r
             ;;
         4)
             install_xrm_director
-            echo -е "\nНажмите Enter для продолжения..."
-            read -r
             ;;
         5)
             restart_xrm_director
-            echo -е "\nНажмите Enter для продолжения..."
-            read -r
             ;;
         6)
-            xrm_director_status
-            echo -е "\nНажмите Enter для продолжения..."
-            read -r
+            remove_xrm_director
             ;;
         7)
             log_message "INFO" "Завершение работы скрипта"
