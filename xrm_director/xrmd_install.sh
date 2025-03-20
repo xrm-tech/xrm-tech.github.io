@@ -508,19 +508,26 @@ install_xrm_director() {
         fi
     fi
     
-    # Ожидание полной инициализации ragflow-server (макс. 60 секунд)
+    # Ожидание полной инициализации ragflow-server (макс. 180 секунд)
     echo "Ожидание запуска сервера (это может занять некоторое время)..."
-    for i in {1..12}; do
-        if docker logs ragflow-server 2>&1 | grep "* Running on all addresses (0.0.0.0)"; then
-            echo "Сервер ragflow-server успешно запущен!"
+    local server_started=false
+    for i in {1..36}; do
+        if docker logs ragflow-server 2>&1 | grep -q "* Running on all addresses (0.0.0.0)"; then
+            echo -e "\nСервер ragflow-server успешно запущен!"
+            server_started=true
             break
-        fi
-        if [ "$i" -eq 12 ]; then
-            echo "Превышено время ожидания запуска сервера. Проверьте логи: docker logs -f ragflow-server"
         fi
         echo -n "."
         sleep 5
     done
+    
+    if [ "$server_started" = false ]; then
+        echo -e "\nПревышено время ожидания запуска сервера (180 секунд)."
+        echo "Проверьте логи контейнера: docker logs -f ragflow-server"
+        echo "Система может работать некорректно до полного запуска сервера."
+        echo "Нажмите Enter для продолжения..."
+        read -r
+    fi
     
     # Установка Ollama
     echo "Установка Ollama..."
@@ -559,7 +566,10 @@ install_xrm_director() {
     echo "Доступ к веб-интерфейсу: http://$server_ip"
     echo "Ollama API доступен по адресу: http://$server_ip:11434"
     echo "===================================================="
-    show_return_to_menu_message
+    
+    # Дополнительная пауза, чтобы пользователь мог прочитать результат установки
+    echo "Нажмите Enter, чтобы вернуться в главное меню..."
+    read -r
 }
 
 # Функция для перезапуска XRM Director
