@@ -8,18 +8,35 @@ import re
 import urllib3
 import sys
 
-# Отключаем предупреждения о SSL
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# ============= КОНФИГУРАЦИЯ =============
+# Параметры подключения к серверу
+HOST = "37.187.132.140:15043"
 
-# Пытаемся импортировать BeautifulSoup, если не получается - предлагаем установить
-try:
-    from bs4 import BeautifulSoup
-    BEAUTIFULSOUP_AVAILABLE = True
-except ImportError:
-    print("ВНИМАНИЕ: Модуль bs4 (BeautifulSoup) не установлен.")
-    print("Для установки выполните команду: pip install beautifulsoup4")
-    print("Продолжаем работу с ограниченной функциональностью...\n")
-    BEAUTIFULSOUP_AVAILABLE = False
+# Пути для сохранения файлов
+# Используем директорию в домашнем каталоге пользователя
+HOME_DIR = os.path.expanduser("~")
+LOGS_DIR = os.path.join(HOME_DIR, "uds_logs")
+
+# Куки для HTTP-запросов (измените на свои значения)
+COOKIES = {
+    'uds': 'QTKdZrtZDr3qb3KTRoyGxHvP0lNaA22yGf91DmFinmuc5pF1',
+    'csrftoken': 'XIFv2gzw2FoDFFv500I3gHv8IpIwSsq8BDLGDxpeKQCiWt3TvtrCmbrHbr98srmV',
+    'sessionid': 'xma7rakeqldcz4mhitd4re6s3bc4xko2',
+    'cookieconsent_status': 'dismiss'
+}
+
+# URLs для запросов
+BASE_URL = f"https://{HOST}"
+AUTH_URL = f"{BASE_URL}/uds/rest/auth/login"
+LOGS_PAGE_URL = f"{BASE_URL}/uds/tools/logs"
+DOWNLOAD_URL = f"{BASE_URL}/hostvm/utility/download"
+ALT_DOWNLOAD_URL_TEMPLATE = f"{BASE_URL}/uds/rest/component/server/log/"
+
+# Заголовки для HTTP-запросов
+HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+}
 
 # Словарь доступных логов
 AVAILABLE_LOGS = {
@@ -32,7 +49,32 @@ AVAILABLE_LOGS = {
     "workers.log": "Журнал работы процессов"
 }
 
-def download_log(host, username=None, password=None, log_file="auth.log", cookies=None, logs_dir="logs"):
+# Список файлов логов для скачивания
+LOG_FILES = [
+    "auth.log",
+    "services.log",
+    "sql.log",
+    "trace.log",
+    "uds.log",
+    "use.log",
+    "workers.log"
+]
+
+# Отключаем предупреждения о SSL
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# =======================================
+
+# Пытаемся импортировать BeautifulSoup, если не получается - предлагаем установить
+try:
+    from bs4 import BeautifulSoup
+    BEAUTIFULSOUP_AVAILABLE = True
+except ImportError:
+    print("ВНИМАНИЕ: Модуль bs4 (BeautifulSoup) не установлен.")
+    print("Для установки выполните команду: pip install beautifulsoup4")
+    print("Продолжаем работу с ограниченной функциональностью...\n")
+    BEAUTIFULSOUP_AVAILABLE = False
+
+def download_log(host=HOST, username=None, password=None, log_file="auth.log", cookies=COOKIES, logs_dir=LOGS_DIR):
     """
     Скачивает лог-файл с сервера OpenUDS.
     
@@ -91,7 +133,7 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
 
         # Шаг 2: Получаем CSRF токен
         print("Получаем CSRF токен...")
-        logs_page_url = f"https://{host}/uds/tools/logs"
+        logs_page_url = LOGS_PAGE_URL
         logs_page = session.get(logs_page_url)
         
         csrf_token = session.cookies.get('csrftoken')
@@ -102,14 +144,10 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
         print(f"Получен CSRF токен: {csrf_token[:10]}...")
     
     # Шаг 3: Скачиваем файл логов
-    logs_page_url = f"https://{host}/uds/tools/logs"
-    print(f"Доступ к странице логов: {logs_page_url}")
+    print(f"Доступ к странице логов: {LOGS_PAGE_URL}")
     
     # Формируем заголовки
-    headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-    }
+    headers = HEADERS.copy()
     
     # Добавляем X-CSRFToken если есть
     csrf_token = session.cookies.get('csrftoken')
@@ -118,7 +156,7 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
     
     # Выполняем GET-запрос для получения страницы с логами
     response = session.get(
-        logs_page_url,
+        LOGS_PAGE_URL,
         headers=headers
     )
     
@@ -128,10 +166,8 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
         print(response.text[:200])
         return None
     
-    # Сохраняем HTML для анализа
-    with open("logs_page.html", "w", encoding="utf-8") as f:
-        f.write(response.text)
-    print(f"Сохранили HTML страницы логов в logs_page.html для анализа")
+    # Убираем сохранение HTML страницы логов
+    print("Анализируем страницу логов...")
     
     # Инициализируем переменные
     target_link = None
@@ -187,25 +223,24 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
         print(f"Не найдена прямая ссылка на {log_file}, пробуем прямой запрос на скачивание...")
         
         # Если не найдена прямая ссылка, пробуем прямой запрос на скачивание
-        download_url = f"https://{host}/hostvm/utility/download"
         download_headers = {
             "Accept": "*/*",
             "Content-Type": "application/json", 
-            "Origin": f"https://{host}",
-            "Referer": logs_page_url,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "Origin": BASE_URL,
+            "Referer": LOGS_PAGE_URL,
+            "User-Agent": HEADERS["User-Agent"],
             "X-CSRFToken": csrf_token
         }
         
         # Исправляем формат JSON - использование правильного формата для запроса
         download_body = '{"filename": "' + log_file + '"}'
         
-        print(f"Отправляем запрос на скачивание {log_file} на URL: {download_url}")
+        print(f"Отправляем запрос на скачивание {log_file} на URL: {DOWNLOAD_URL}")
         print(f"Заголовки запроса: {download_headers}")
         print(f"Тело запроса: {download_body}")
         
         download_response = session.post(
-            download_url,
+            DOWNLOAD_URL,
             headers=download_headers,
             data=download_body
         )
@@ -216,7 +251,7 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
             print(f"Ответ сервера: {download_response.text}")
             
             # Попробуем альтернативный URL для скачивания
-            alt_download_url = f"https://{host}/uds/rest/component/server/log/{log_file}"
+            alt_download_url = ALT_DOWNLOAD_URL_TEMPLATE + log_file
             print(f"Пробуем альтернативный URL: {alt_download_url}")
             
             alt_download_response = session.get(
@@ -234,9 +269,7 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
         content_type = download_response.headers.get('Content-Type', '')
         if 'text/html' in content_type:
             print(f"Получен HTML вместо файла! Content-Type: {content_type}")
-            with open("error.html", "wb") as f:
-                f.write(download_response.content)
-            print("Ошибка сохранена в error.html")
+            print("Ответ сервера содержит HTML вместо файла логов")
             return None
         
         # Сохраняем скачанный файл
@@ -258,9 +291,9 @@ def download_log(host, username=None, password=None, log_file="auth.log", cookie
         download_url = target_link
         if not download_url.startswith('http'):
             if download_url.startswith('/'):
-                download_url = f"https://{host}{download_url}"
+                download_url = f"{BASE_URL}{download_url}"
             else:
-                download_url = f"https://{host}/{download_url}"
+                download_url = f"{BASE_URL}/{download_url}"
         
         print(f"Скачиваем файл по ссылке: {download_url}")
         download_response = session.get(download_url, headers=headers)
@@ -295,46 +328,22 @@ if __name__ == "__main__":
         print("ОШИБКА: Для работы скрипта требуется Python 3")
         sys.exit(1)
     
-    # Параметры подключения
-    HOST = "37.187.132.140:15043"
-    
-    # Куки для аутентификации
-    cookies = {
-        'uds': 'QTKdZrtZDr3qb3KTRoyGxHvP0lNaA22yGf91DmFinmuc5pF1',
-        'csrftoken': 'XIFv2gzw2FoDFFv500I3gHv8IpIwSsq8BDLGDxpeKQCiWt3TvtrCmbrHbr98srmV',
-        'sessionid': 'y75p78nyjrkzdswpjdb7qrww0jsrwtry',
-    }
-    
     # Выводим список доступных логов
     list_available_logs()
-    
-    # Директория для сохранения логов
-    LOGS_DIR = "logs"
     
     # Создаем директорию для логов, если она не существует
     os.makedirs(LOGS_DIR, exist_ok=True)
     print(f"Файлы логов будут сохранены в директорию: {os.path.abspath(LOGS_DIR)}")
     
-    # Список файлов логов для скачивания
-    log_files = [
-        "auth.log",
-        "services.log",
-        "sql.log",
-        "trace.log",
-        "uds.log",
-        "use.log",
-        "workers.log"
-    ]
-    
     # Скачиваем все файлы логов
     successful_downloads = 0
     failed_downloads = 0
     
-    print(f"\nНачинаем скачивание {len(log_files)} файлов логов...")
+    print(f"\nНачинаем скачивание {len(LOG_FILES)} файлов логов...")
     
-    for log_file in log_files:
+    for log_file in LOG_FILES:
         print(f"\nСкачиваем файл {log_file}...")
-        result = download_log(HOST, log_file=log_file, cookies=cookies, logs_dir=LOGS_DIR)
+        result = download_log(log_file=log_file)
         
         if result:
             print(f"Скачивание {log_file} успешно завершено!")
