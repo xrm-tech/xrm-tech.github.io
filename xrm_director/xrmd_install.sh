@@ -862,14 +862,14 @@ create_backup() {
       fi
     done
     
+    # Запускаем контейнеры снова
+    start_containers
+
     # Создаем метаинформацию о бэкапе
     echo "Дата создания: $(date)" > ${BACKUP_SUBDIR}/backup_info.txt
     echo "Версия Docker: $(docker --version)" >> ${BACKUP_SUBDIR}/backup_info.txt
     echo "Контейнеры:" >> ${BACKUP_SUBDIR}/backup_info.txt
     docker ps -a >> ${BACKUP_SUBDIR}/backup_info.txt
-    
-    # Запускаем контейнеры снова
-    start_containers
     
     # Выводим информацию о созданных архивах
     print_color "blue" "📊 Информация о созданном бэкапе:"
