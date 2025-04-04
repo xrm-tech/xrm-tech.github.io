@@ -1,0 +1,10 @@
+Дата создания: Fri Apr  4 14:57:57 MSK 2025
+Версия Docker: Docker version 25.0.7, build 0bab007
+Контейнеры:
+CONTAINER ID   IMAGE                                              COMMAND                  CREATED          STATUS                             PORTS                                                                                                                 NAMES
+771f01783c62   infiniflow/ragflow:v0.17.2                         "./entrypoint.sh"        12 seconds ago   Up Less than a second              0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
+ad7185071988   elasticsearch:8.11.3                               "/bin/tini -- /usr/l…"   12 seconds ago   Up 11 seconds (health: starting)   9300/tcp, 0.0.0.0:1200->9200/tcp, :::1200->9200/tcp                                                                   ragflow-es-01
+34cd15266578   mysql:8.0.39                                       "docker-entrypoint.s…"   12 seconds ago   Up 11 seconds (healthy)            33060/tcp, 0.0.0.0:5455->3306/tcp, :::5455->3306/tcp                                                                  ragflow-mysql
+c8c1b905648b   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z   "/usr/bin/docker-ent…"   12 seconds ago   Up 11 seconds                      0.0.0.0:9000-9001->9000-9001/tcp, :::9000-9001->9000-9001/tcp                                                         ragflow-minio
+b2ee226d6406   valkey/valkey:8                                    "docker-entrypoint.s…"   12 seconds ago   Up 11 seconds                      0.0.0.0:6379->6379/tcp, :::6379->6379/tcp                                                                             ragflow-redis
+4b82a0364c78   ollama/ollama                                      "/bin/ollama serve"      9 days ago       Up 9 days                          0.0.0.0:11434->11434/tcp, :::11434->11434/tcp                                                                         ollama
