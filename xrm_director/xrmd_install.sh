@@ -18,11 +18,18 @@ DOCKER_ENV="${DOCKER_DIR}/.env"
 RAGFLOW_SLIM_IMAGE="infiniflow/ragflow:v0.17.2-slim"
 RAGFLOW_FULL_IMAGE="infiniflow/ragflow:v0.17.2"
 OLLAMA_LLM_MODEL="akdengi/saiga-gemma2"
+OLLAMA_LLM_MODEL_2="nomic-embed-text"
 
 # Переменные для резервного копирования
 BACKUP_DIR="/opt/xrm-director/backups"
 PROJECT_NAME="ragflow"
 DATE_FORMAT="$(date +%Y-%m-%d_%H-%M-%S)"
+
+# ======= Настройки резервного копирования =======
+INITIAL_BACKUP_URL="https://files.x-rm.ru/xrm_director/backup/initial_backup.tar.gz"
+INITIAL_BACKUP_DIR="${BACKUP_DIR}/initial"
+USER_BACKUP_DIR="${BACKUP_DIR}/user"
+AUTO_RESTORE_INITIAL_BACKUP=1 # 0 - отключить, 1 - включить авторазвертывание initial backup
 
 # ======= Настройка обработки ошибок и выхода =======
 set -o pipefail
@@ -337,6 +344,33 @@ install_xrm_director() {
     fi
     log_message "INFO" "Архив успешно скачан: $INSTALL_DIR/docker.tar.gz"
     
+    # Создание директорий для резервных копий
+    mkdir -p "${INITIAL_BACKUP_DIR}" "${USER_BACKUP_DIR}"
+    
+    # Скачивание initial backup только в директорию initial
+    echo "Загрузка initial backup..."
+    if ! wget --no-check-certificate -O "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" "${INITIAL_BACKUP_URL}" || [ ! -s "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+        log_message "WARNING" "Не удалось загрузить initial backup"
+        echo "Предупреждение: Initial backup не загружен"
+        
+        # Попытка загрузить напрямую по конкретному URL
+        echo "Пробуем альтернативную загрузку initial backup..."
+        if ! wget --no-check-certificate -O "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" "https://files.x-rm.ru/xrm_director/backup/initial_backup.tar.gz"; then
+            log_message "WARNING" "Альтернативная загрузка initial backup тоже не удалась"
+            echo "Предупреждение: Альтернативная загрузка initial backup тоже не удалась"
+        else
+            log_message "INFO" "Initial backup успешно загружен альтернативным способом"
+            echo "Initial backup загружен в ${INITIAL_BACKUP_DIR}"
+        fi
+    else
+        log_message "INFO" "Initial backup успешно загружен"
+        echo "Initial backup загружен в ${INITIAL_BACKUP_DIR}"
+    fi
+    
+    echo "Директории для бэкапов созданы:"
+    echo "- ${INITIAL_BACKUP_DIR} (для системных бэкапов)"
+    echo "- ${USER_BACKUP_DIR} (для пользовательских бэкапов)"
+    
     # Распаковка архива
     echo "Распаковка архива..."
     mkdir -p "$DOCKER_DIR"
@@ -466,6 +500,59 @@ install_xrm_director() {
         fi
     fi
     
+    # Автовосстановление initial backup
+    if [ ${AUTO_RESTORE_INITIAL_BACKUP} -eq 1 ]; then
+        echo "Проверка наличия initial backup..."
+        if [ -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+            echo "Развертывание начальной резервной копии..."
+            
+            # Создаем временную директорию для распаковки
+            TEMP_RESTORE_DIR=$(mktemp -d)
+            
+            # Распаковываем архив
+            tar -xzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" -C "${TEMP_RESTORE_DIR}"
+            
+            # Находим директорию с бэкапами (обычно имеет формат ragflow_DATE)
+            BACKUP_FOLDER=$(find "${TEMP_RESTORE_DIR}" -type d -name "ragflow_*" | head -n 1)
+            
+            if [ -z "${BACKUP_FOLDER}" ]; then
+                # Если папка не найдена, используем корневую директорию временной папки
+                BACKUP_FOLDER="${TEMP_RESTORE_DIR}"
+            fi
+            
+            echo "Найдена директория с бэкапами: ${BACKUP_FOLDER}"
+            
+            # Восстанавливаем каждый том
+            for volume_backup in "${BACKUP_FOLDER}"/*.tar.gz; do
+                if [ -f "${volume_backup}" ]; then
+                    # Извлекаем корректное имя тома из имени файла (docker_esdata01.tar.gz -> docker_esdata01)
+                    volume_name=$(basename "${volume_backup}" .tar.gz)
+                    echo "Восстановление тома ${volume_name}..."
+                    
+                    # Создаем том если не существует
+                    docker volume create "${volume_name}" >/dev/null 2>&1 || true
+                    
+                    # Восстанавливаем данные
+                    docker run --rm -v "${volume_name}":/volume \
+                        -v "${BACKUP_FOLDER}":/backup alpine \
+                        sh -c "rm -rf /volume/* && tar -xzf /backup/$(basename "${volume_backup}") -C /volume"
+                    
+                    if [ $? -eq 0 ]; then
+                        echo "✅ Том ${volume_name} успешно восстановлен"
+                    else
+                        echo "❌ Ошибка при восстановлении тома ${volume_name}"
+                    fi
+                fi
+            done
+            
+            # Очистка временной директории
+            rm -rf "${TEMP_RESTORE_DIR}"
+            echo "Начальная резервная копия успешно развернута"
+        else
+            echo "Initial backup не найден, пропускаем авторазвертывание"
+        fi
+    fi
+    
     # Проверка запуска контейнера ragflow-server
     echo "Проверка запуска контейнера ragflow-server..."
     sleep 5
@@ -553,13 +640,30 @@ install_xrm_director() {
         echo "Порт Ollama (11434) доступен"
     fi
     
-    # Установка модели в Ollama
-    echo "Установка модели $OLLAMA_LLM_MODEL в Ollama..."
+    # Установка моделей в Ollama
+    echo "Установка моделей в Ollama..."
     sleep 5
+    
+    # Установка первой модели (LLM)
+    echo "Установка модели $OLLAMA_LLM_MODEL в Ollama..."
     if ! docker exec ollama ollama run $OLLAMA_LLM_MODEL; then
-        log_message "ERROR" "Не удалось установить модель в Ollama"
-        echo "Ошибка: Не удалось установить модель в Ollama"
+        log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
+        echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
         return 1
+    else
+        log_message "INFO" "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
+        echo "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
+    fi
+    
+    # Установка второй модели (embedding)
+    echo "Установка модели $OLLAMA_LLM_MODEL_2 (embedding) в Ollama..."
+    if ! docker exec ollama ollama pull $OLLAMA_LLM_MODEL_2; then
+        log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
+        echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
+        return 1
+    else
+        log_message "INFO" "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
+        echo "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
     fi
     
     # Определение IP-адреса сервера
@@ -824,7 +928,8 @@ start_containers() {
 
 # Создание резервной копии
 create_backup() {
-    mkdir -p ${BACKUP_DIR}
+    # Убеждаемся, что директория для пользовательских бэкапов существует
+    mkdir -p "${USER_BACKUP_DIR}"
 
     print_color "blue" "🚀 Начинаем резервное копирование томов ${PROJECT_NAME} (${DATE_FORMAT})"
     
@@ -837,9 +942,9 @@ create_backup() {
     # Счетчик успешных архиваций
     SUCCESS_COUNT=0
     
-    # Создаем директорию для текущего бэкапа
-    BACKUP_SUBDIR="${BACKUP_DIR}/${PROJECT_NAME}_${DATE_FORMAT}"
-    mkdir -p ${BACKUP_SUBDIR}
+    # Создаем директорию для текущего бэкапа в пользовательском каталоге
+    BACKUP_SUBDIR="${USER_BACKUP_DIR}/${PROJECT_NAME}_${DATE_FORMAT}"
+    mkdir -p "${BACKUP_SUBDIR}"
     
     # Архивируем каждый том
     for VOLUME in "${VOLUMES[@]}"; do
@@ -866,10 +971,10 @@ create_backup() {
     start_containers
 
     # Создаем метаинформацию о бэкапе
-    echo "Дата создания: $(date)" > ${BACKUP_SUBDIR}/backup_info.txt
-    echo "Версия Docker: $(docker --version)" >> ${BACKUP_SUBDIR}/backup_info.txt
-    echo "Контейнеры:" >> ${BACKUP_SUBDIR}/backup_info.txt
-    docker ps -a >> ${BACKUP_SUBDIR}/backup_info.txt
+    echo "Дата создания: $(date)" > "${BACKUP_SUBDIR}/backup_info.txt"
+    echo "Версия Docker: $(docker --version)" >> "${BACKUP_SUBDIR}/backup_info.txt"
+    echo "Контейнеры:" >> "${BACKUP_SUBDIR}/backup_info.txt"
+    docker ps -a >> "${BACKUP_SUBDIR}/backup_info.txt"
     
     # Выводим информацию о созданных архивах
     print_color "blue" "📊 Информация о созданном бэкапе:"
@@ -879,23 +984,26 @@ create_backup() {
       print_color "green" "📂 Бэкап сохранен в: ${BACKUP_SUBDIR}"
       
       # Создаем общий архив для удобства переноса
-      tar -czf "${BACKUP_DIR}/${PROJECT_NAME}_full_${DATE_FORMAT}.tar.gz" -C ${BACKUP_DIR} $(basename ${BACKUP_SUBDIR})
-      print_color "green" "📦 Создан полный архив: ${BACKUP_DIR}/${PROJECT_NAME}_full_${DATE_FORMAT}.tar.gz"
+      tar -czf "${USER_BACKUP_DIR}/${PROJECT_NAME}_full_${DATE_FORMAT}.tar.gz" -C "${USER_BACKUP_DIR}" $(basename ${BACKUP_SUBDIR})
+      print_color "green" "📦 Создан полный архив: ${USER_BACKUP_DIR}/${PROJECT_NAME}_full_${DATE_FORMAT}.tar.gz"
     else
       print_color "red" "⚠️ Не удалось создать ни одного архива"
-      rm -rf ${BACKUP_SUBDIR}
+      rm -rf "${BACKUP_SUBDIR}"
     fi
 }
 
 # Получение списка доступных бэкапов
 list_backups() {
-    print_color "blue" "📋 Доступные полные бэкапы:"
+    # Проверяем и создаем директории, если не существуют
+    mkdir -p "${USER_BACKUP_DIR}" "${INITIAL_BACKUP_DIR}"
     
-    # Ищем полные архивы
-    FULL_BACKUPS=($(find ${BACKUP_DIR} -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" | sort -r))
+    print_color "blue" "📋 Доступные пользовательские бэкапы:"
+    
+    # Ищем полные архивы пользовательских бэкапов
+    FULL_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" 2>/dev/null | sort -r))
     
     if [ ${#FULL_BACKUPS[@]} -eq 0 ]; then
-        print_color "yellow" "⚠️ Полные архивы не найдены"
+        print_color "yellow" "⚠️ Пользовательские полные архивы не найдены"
     else
         echo "Найдено ${#FULL_BACKUPS[@]} архивов:"
         for i in "${!FULL_BACKUPS[@]}"; do
@@ -906,17 +1014,28 @@ list_backups() {
         done
     fi
     
-    # Ищем директории с бэкапами
-    DIR_BACKUPS=($(find ${BACKUP_DIR} -maxdepth 1 -type d -name "${PROJECT_NAME}_*" | sort -r))
+    # Ищем директории с пользовательскими бэкапами
+    DIR_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -type d -name "${PROJECT_NAME}_*" 2>/dev/null | sort -r))
     
-    if [ ${#DIR_BACKUPS[@]} -gt 1 ]; then  # >1 потому что сам BACKUP_DIR тоже будет в списке
-        print_color "blue" "📂 Директории с отдельными бэкапами томов:"
+    if [ ${#DIR_BACKUPS[@]} -gt 0 ]; then
+        print_color "blue" "📂 Директории с отдельными пользовательскими бэкапами томов:"
         for i in "${!DIR_BACKUPS[@]}"; do
-            if [ "${DIR_BACKUPS[$i]}" != "${BACKUP_DIR}" ]; then
+            if [ "${DIR_BACKUPS[$i]}" != "${USER_BACKUP_DIR}" ]; then
                 dirname=$(basename "${DIR_BACKUPS[$i]}")
                 echo "[$i] ${dirname}"
             fi
         done
+    fi
+
+    # Проверяем наличие initial backup
+    echo ""
+    print_color "blue" "📋 Системные бэкапы (initial):"
+    if [ -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+        size=$(du -h "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" | cut -f1)
+        date_created=$(date -r "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" "+%Y-%m-%d %H:%M:%S")
+        echo "[S] initial_backup.tar.gz (${size}, создан: ${date_created})"
+    else
+        print_color "yellow" "⚠️ Системный бэкап не найден"
     fi
 }
 
@@ -927,99 +1046,186 @@ restore_backup() {
     # Показываем доступные бэкапы
     list_backups
     
-    # Ищем полные архивы
-    FULL_BACKUPS=($(find ${BACKUP_DIR} -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" | sort -r))
+    # Ищем полные пользовательские архивы
+    FULL_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" 2>/dev/null | sort -r))
 
-    if [ ${#FULL_BACKUPS[@]} -eq 0 ]; then
+    # Проверяем, есть ли хоть один бэкап (пользовательский или системный)
+    if [ ${#FULL_BACKUPS[@]} -eq 0 ] && [ ! -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
         print_color "red" "❌ Нет доступных бэкапов для восстановления"
         return 1
     fi
     
-    # Запрашиваем номер бэкапа для восстановления
-    read -p "Введите номер бэкапа для восстановления или 'q' для отмены: " backup_number
+    echo ""
+    echo "Выберите источник восстановления:"
+    echo "1. Пользовательский бэкап (введите номер из списка)"
+    echo "S. Системный бэкап (initial)"
+    echo "q. Отмена"
+    read -p "Ваш выбор: " backup_choice
     
-    if [ "$backup_number" == "q" ]; then
+    if [ "$backup_choice" == "q" ]; then
         print_color "yellow" "❌ Восстановление отменено пользователем"
         return 0
-    fi
-    
-    # Проверяем корректность ввода
-    if ! [[ "$backup_number" =~ ^[0-9]+$ ]] || [ $backup_number -ge ${#FULL_BACKUPS[@]} ]; then
-        print_color "red" "❌ Некорректный номер бэкапа"
-        return 1
-    fi
-    
-    # Выбранный бэкап
-    selected_backup="${FULL_BACKUPS[$backup_number]}"
-    backup_name=$(basename "$selected_backup" .tar.gz)
-    
-    print_color "yellow" "⚠️ Внимание! Восстановление из бэкапа перезапишет текущие данные томов."
-    read -p "Вы уверены, что хотите восстановить данные из '$backup_name'? (y/n): " confirm
-    
-    if [ "$confirm" != "y" ]; then
-        print_color "yellow" "❌ Восстановление отменено пользователем"
-        return 0
-    fi
-    
-    # Останавливаем контейнеры
-    stop_containers
-    
-    # Создаем временную директорию для распаковки
-    TEMP_DIR=$(mktemp -d)
-    print_color "blue" "📂 Распаковываем архив во временную директорию: ${TEMP_DIR}"
-    
-    # Распаковываем полный архив
-    tar -xzf "$selected_backup" -C "$TEMP_DIR"
-    
-    # Получаем имя распакованной директории
-    UNPACKED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "${PROJECT_NAME}_*" | head -n 1)
-    
-    if [ -z "$UNPACKED_DIR" ]; then
-        print_color "red" "❌ Ошибка при распаковке архива"
-        start_containers
-        rm -rf "$TEMP_DIR"
-        return 1
-    fi
-    
-    # Восстанавливаем тома
-    SUCCESS_COUNT=0
-    VOLUMES_TOTAL=0
-    
-    # Перебираем все tar.gz файлы в распакованной директории
-    for archive in "$UNPACKED_DIR"/*.tar.gz; do
-        if [ -f "$archive" ]; then
-            VOLUMES_TOTAL=$((VOLUMES_TOTAL + 1))
-            volume_name=$(basename "$archive" .tar.gz)
-            print_color "blue" "🔄 Восстанавливаем том $volume_name..."
-            
-            # Проверяем существование тома
-            if ! docker volume inspect "$volume_name" &>/dev/null; then
-                print_color "yellow" "⚠️ Том $volume_name не существует, создаем..."
-                docker volume create "$volume_name" > /dev/null
-            fi
-            
-            # Восстанавливаем данные тома
-            docker run --rm -v "$volume_name":/volume -v "$UNPACKED_DIR":/backup alpine sh -c "rm -rf /volume/* && tar -xzf /backup/$(basename $archive) -C /volume"
-            
-            if [ $? -eq 0 ]; then
-                print_color "green" "✅ Том $volume_name успешно восстановлен"
-                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-            else
-                print_color "red" "❌ Ошибка при восстановлении тома $volume_name"
-            fi
+    elif [ "$backup_choice" == "S" ] || [ "$backup_choice" == "s" ]; then
+        # Восстанавливаем из системного бэкапа
+        if [ ! -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+            print_color "red" "❌ Системный бэкап не найден"
+            return 1
         fi
-    done
+        
+        print_color "yellow" "⚠️ Внимание! Восстановление из системного бэкапа перезапишет текущие данные томов."
+        read -p "Вы уверены? (y/n): " confirm
+        
+        if [ "$confirm" != "y" ]; then
+            print_color "yellow" "❌ Восстановление отменено пользователем"
+            return 0
+        fi
+        
+        # Останавливаем контейнеры
+        stop_containers
+        
+        # Создаем временную директорию для распаковки
+        TEMP_DIR=$(mktemp -d)
+        print_color "blue" "📂 Распаковываем системный архив во временную директорию: ${TEMP_DIR}"
+        
+        # Распаковываем архив
+        tar -xzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" -C "${TEMP_DIR}"
+        
+        # Находим директорию с бэкапами (обычно имеет формат ragflow_DATE)
+        BACKUP_FOLDER=$(find "${TEMP_DIR}" -type d -name "ragflow_*" | head -n 1)
+        
+        if [ -z "${BACKUP_FOLDER}" ]; then
+            # Если папка не найдена, используем корневую директорию временной папки
+            BACKUP_FOLDER="${TEMP_DIR}"
+        fi
+        
+        print_color "blue" "📂 Найдена директория с бэкапами: ${BACKUP_FOLDER}"
+        
+        # Восстанавливаем тома из системного бэкапа
+        SUCCESS_COUNT=0
+        VOLUMES_TOTAL=0
+        
+        # Перебираем все tar.gz файлы в распакованной директории
+        for archive in "${BACKUP_FOLDER}"/*.tar.gz; do
+            if [ -f "$archive" ]; then
+                VOLUMES_TOTAL=$((VOLUMES_TOTAL + 1))
+                volume_name=$(basename "$archive" .tar.gz)
+                print_color "blue" "🔄 Восстанавливаем том $volume_name..."
+                
+                # Проверяем существование тома
+                if ! docker volume inspect "$volume_name" &>/dev/null; then
+                    print_color "yellow" "⚠️ Том $volume_name не существует, создаем..."
+                    docker volume create "$volume_name" > /dev/null
+                fi
+                
+                # Восстанавливаем данные тома
+                docker run --rm -v "$volume_name":/volume -v "${BACKUP_FOLDER}":/backup alpine sh -c "rm -rf /volume/* && tar -xzf /backup/$(basename $archive) -C /volume"
+                
+                if [ $? -eq 0 ]; then
+                    print_color "green" "✅ Том $volume_name успешно восстановлен"
+                    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+                else
+                    print_color "red" "❌ Ошибка при восстановлении тома $volume_name"
+                fi
+            fi
+        done
+        
+        # Удаляем временную директорию
+        rm -rf "$TEMP_DIR"
+        
+        # Запускаем контейнеры
+        start_containers
+        
+        if [ $SUCCESS_COUNT -gt 0 ]; then
+            print_color "green" "🎉 Успешно восстановлено томов из системного бэкапа: $SUCCESS_COUNT из $VOLUMES_TOTAL"
+        else
+            print_color "red" "❌ Не удалось восстановить ни одного тома из системного бэкапа"
+        fi
     
-    # Удаляем временную директорию
-    rm -rf "$TEMP_DIR"
-    
-    # Запускаем контейнеры
-    start_containers
-    
-    if [ $SUCCESS_COUNT -gt 0 ]; then
-        print_color "green" "🎉 Успешно восстановлено томов: $SUCCESS_COUNT из $VOLUMES_TOTAL"
     else
-        print_color "red" "❌ Не удалось восстановить ни одного тома"
+        # Восстанавливаем из пользовательского бэкапа
+        if [ ${#FULL_BACKUPS[@]} -eq 0 ]; then
+            print_color "red" "❌ Нет доступных пользовательских бэкапов для восстановления"
+            return 1
+        fi
+        
+        # Проверяем корректность ввода
+        if ! [[ "$backup_choice" =~ ^[0-9]+$ ]] || [ $backup_choice -ge ${#FULL_BACKUPS[@]} ]; then
+            print_color "red" "❌ Некорректный номер бэкапа"
+            return 1
+        fi
+        
+        # Выбранный бэкап
+        selected_backup="${FULL_BACKUPS[$backup_choice]}"
+        backup_name=$(basename "$selected_backup" .tar.gz)
+        
+        print_color "yellow" "⚠️ Внимание! Восстановление из бэкапа перезапишет текущие данные томов."
+        read -p "Вы уверены, что хотите восстановить данные из '$backup_name'? (y/n): " confirm
+        
+        if [ "$confirm" != "y" ]; then
+            print_color "yellow" "❌ Восстановление отменено пользователем"
+            return 0
+        fi
+        
+        # Останавливаем контейнеры
+        stop_containers
+        
+        # Создаем временную директорию для распаковки
+        TEMP_DIR=$(mktemp -d)
+        print_color "blue" "📂 Распаковываем архив во временную директорию: ${TEMP_DIR}"
+        
+        # Распаковываем полный архив
+        tar -xzf "$selected_backup" -C "$TEMP_DIR"
+        
+        # Получаем имя распакованной директории
+        UNPACKED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "${PROJECT_NAME}_*" | head -n 1)
+        
+        if [ -z "$UNPACKED_DIR" ]; then
+            print_color "red" "❌ Ошибка при распаковке архива"
+            start_containers
+            rm -rf "$TEMP_DIR"
+            return 1
+        fi
+        
+        # Восстанавливаем тома
+        SUCCESS_COUNT=0
+        VOLUMES_TOTAL=0
+        
+        # Перебираем все tar.gz файлы в распакованной директории
+        for archive in "$UNPACKED_DIR"/*.tar.gz; do
+            if [ -f "$archive" ]; then
+                VOLUMES_TOTAL=$((VOLUMES_TOTAL + 1))
+                volume_name=$(basename "$archive" .tar.gz)
+                print_color "blue" "🔄 Восстанавливаем том $volume_name..."
+                
+                # Проверяем существование тома
+                if ! docker volume inspect "$volume_name" &>/dev/null; then
+                    print_color "yellow" "⚠️ Том $volume_name не существует, создаем..."
+                    docker volume create "$volume_name" > /dev/null
+                fi
+                
+                # Восстанавливаем данные тома
+                docker run --rm -v "$volume_name":/volume -v "$UNPACKED_DIR":/backup alpine sh -c "rm -rf /volume/* && tar -xzf /backup/$(basename $archive) -C /volume"
+                
+                if [ $? -eq 0 ]; then
+                    print_color "green" "✅ Том $volume_name успешно восстановлен"
+                    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+                else
+                    print_color "red" "❌ Ошибка при восстановлении тома $volume_name"
+                fi
+            fi
+        done
+        
+        # Удаляем временную директорию
+        rm -rf "$TEMP_DIR"
+        
+        # Запускаем контейнеры
+        start_containers
+        
+        if [ $SUCCESS_COUNT -gt 0 ]; then
+            print_color "green" "🎉 Успешно восстановлено томов из пользовательского бэкапа: $SUCCESS_COUNT из $VOLUMES_TOTAL"
+        else
+            print_color "red" "❌ Не удалось восстановить ни одного тома из пользовательского бэкапа"
+        fi
     fi
 }
 
@@ -1027,18 +1233,22 @@ restore_backup() {
 manage_backups() {
     print_color "blue" "📊 Управление резервными копиями"
     
+    # Проверяем и создаем директории, если не существуют
+    mkdir -p "${USER_BACKUP_DIR}" "${INITIAL_BACKUP_DIR}"
+    
     # Показываем доступные бэкапы
     list_backups
     
     # Ищем полные архивы
-    FULL_BACKUPS=($(find ${BACKUP_DIR} -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" | sort -r))
+    FULL_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" 2>/dev/null | sort -r))
     
     echo ""
     echo "Выберите действие:"
-    echo "1. Удалить выбранный бэкап"
-    echo "2. Оставить только последние N бэкапов"
-    echo "3. Удалить все бэкапы"
-    echo "4. Вернуться в главное меню"
+    echo "1. Удалить выбранный пользовательский бэкап"
+    echo "2. Оставить только последние N пользовательских бэкапов"
+    echo "3. Удалить все пользовательские бэкапы"
+    echo "4. Удалить системный (initial) бэкап"
+    echo "5. Вернуться в главное меню"
     
     read -p "Введите номер действия: " action
     
@@ -1063,8 +1273,8 @@ manage_backups() {
                     
                     # Удаляем соответствующую директорию
                     backup_dir_name=$(basename "$selected_backup" .tar.gz)
-                    if [ -d "${BACKUP_DIR}/${backup_dir_name}" ]; then
-                        rm -rf "${BACKUP_DIR}/${backup_dir_name}"
+                    if [ -d "${USER_BACKUP_DIR}/${backup_dir_name}" ]; then
+                        rm -rf "${USER_BACKUP_DIR}/${backup_dir_name}"
                     fi
                     
                     print_color "green" "✅ Бэкап '$backup_name' успешно удален"
@@ -1091,8 +1301,8 @@ manage_backups() {
                             
                             # Удаляем соответствующую директорию
                             backup_dir_name=$(basename "$backup_to_delete" .tar.gz)
-                            if [ -d "${BACKUP_DIR}/${backup_dir_name}" ]; then
-                                rm -rf "${BACKUP_DIR}/${backup_dir_name}"
+                            if [ -d "${USER_BACKUP_DIR}/${backup_dir_name}" ]; then
+                                rm -rf "${USER_BACKUP_DIR}/${backup_dir_name}"
                             fi
                             
                             print_color "green" "✅ Бэкап '$backup_name' удален"
@@ -1103,16 +1313,29 @@ manage_backups() {
             fi
             ;;
         3)
-            read -p "Вы действительно хотите удалить ВСЕ бэкапы? Это действие необратимо! (yes/n): " confirm
+            read -p "Вы действительно хотите удалить ВСЕ пользовательские бэкапы? Это действие необратимо! (yes/n): " confirm
             if [ "$confirm" == "yes" ]; then
-                rm -f ${BACKUP_DIR}/${PROJECT_NAME}_full_*.tar.gz
-                rm -rf ${BACKUP_DIR}/${PROJECT_NAME}_20*
-                print_color "green" "✅ Все бэкапы удалены"
+                rm -f "${USER_BACKUP_DIR}/${PROJECT_NAME}_full_"*.tar.gz
+                rm -rf "${USER_BACKUP_DIR}/${PROJECT_NAME}_"*
+                print_color "green" "✅ Все пользовательские бэкапы удалены"
             else
                 print_color "yellow" "❌ Удаление отменено"
             fi
             ;;
         4)
+            if [ -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+                read -p "Вы действительно хотите удалить системный (initial) бэкап? (yes/n): " confirm
+                if [ "$confirm" == "yes" ]; then
+                    rm -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz"
+                    print_color "green" "✅ Системный бэкап удален"
+                else
+                    print_color "yellow" "❌ Удаление отменено"
+                fi
+            else
+                print_color "yellow" "⚠️ Системный бэкап не найден"
+            fi
+            ;;
+        5)
             return
             ;;
         *)
