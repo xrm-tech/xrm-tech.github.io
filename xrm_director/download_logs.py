@@ -21,7 +21,7 @@ LOGS_DIR = os.path.join(HOME_DIR, "uds_logs")
 COOKIES = {
     'uds': 'QTKdZrtZDr3qb3KTRoyGxHvP0lNaA22yGf91DmFinmuc5pF1',
     'csrftoken': 'XIFv2gzw2FoDFFv500I3gHv8IpIwSsq8BDLGDxpeKQCiWt3TvtrCmbrHbr98srmV',
-    'sessionid': 'xma7rakeqldcz4mhitd4re6s3bc4xko2',
+    'sessionid': 'rz6ia9kdv9yee2nzsfuntuhyjeav9dnq',
     'cookieconsent_status': 'dismiss'
 }
 
