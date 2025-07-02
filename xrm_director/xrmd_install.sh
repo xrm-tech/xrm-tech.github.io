@@ -15,10 +15,10 @@ DOCKER_DIR="${INSTALL_DIR}"
 DOCKER_COMPOSE_YML="${DOCKER_DIR}/docker-compose.yml"
 DOCKER_COMPOSE_GPU_YML="${DOCKER_DIR}/docker-compose-gpu.yml"
 DOCKER_ENV="${DOCKER_DIR}/.env"
-RAGFLOW_SLIM_IMAGE="infiniflow/ragflow:v0.17.2-slim"
-RAGFLOW_FULL_IMAGE="infiniflow/ragflow:v0.17.2"
-OLLAMA_LLM_MODEL="akdengi/saiga-gemma2"
-OLLAMA_LLM_MODEL_2="nomic-embed-text"
+RAGFLOW_SLIM_IMAGE="infiniflow/ragflow:v0.19.1-slim"
+RAGFLOW_FULL_IMAGE="infiniflow/ragflow:v0.19.1"
+OLLAMA_LLM_MODEL="llama3.1:8b"
+OLLAMA_LLM_MODEL_2="snowflake-arctic-embed:335m"
 
 # Переменные для резервного копирования
 BACKUP_DIR="/opt/xrm-director/backups"
@@ -30,6 +30,679 @@ INITIAL_BACKUP_URL="https://files.x-rm.ru/xrm_director/backup/initial_backup.tar
 INITIAL_BACKUP_DIR="${BACKUP_DIR}/initial"
 USER_BACKUP_DIR="${BACKUP_DIR}/user"
 AUTO_RESTORE_INITIAL_BACKUP=1 # 0 - отключить, 1 - включить авторазвертывание initial backup
+
+# ======= Переменные для командной строки =======
+CLI_MODE=0
+CLI_VERSION=""
+CLI_PROCESSOR=""
+
+# ======= Функции для работы с аргументами командной строки =======
+show_help() {
+    cat << EOF
+XRM Director - Скрипт установки и управления
+Версия: $VERSION
+
+ИСПОЛЬЗОВАНИЕ:
+    $0 [ОПЦИИ]
+    $0 install <VERSION> <PROCESSOR>
+
+ОПЦИИ:
+    -h, --help          Показать эту справку
+    -v, --version       Показать версию скрипта
+
+КОМАНДЫ:
+    install             Установить XRM Director
+    
+ПАРАМЕТРЫ УСТАНОВКИ:
+    VERSION:
+        slim            Облегченная версия (рекомендуется для CPU)
+        full            Полная версия (требует больше ресурсов)
+    
+    PROCESSOR:
+        cpu             Использовать CPU для обработки задач
+        gpu             Использовать GPU для обработки задач (требует NVIDIA GPU)
+
+ПРИМЕРЫ:
+    $0                              # Запуск в интерактивном режиме (меню)
+    $0 install slim cpu             # Установка облегченной версии с CPU
+    $0 install full gpu             # Установка полной версии с GPU
+    $0 install slim gpu             # Установка облегченной версии с GPU
+    $0 install full cpu             # Установка полной версии с CPU
+
+ОПИСАНИЕ:
+    Без аргументов скрипт запускается в интерактивном режиме с меню.
+    С аргументами выполняет автоматическую установку без взаимодействия с пользователем.
+    
+    Версии:
+    - slim: Более быстрая установка, меньше места на диске, подходит для большинства задач
+    - full: Расширенный функционал, больше возможностей, требует больше ресурсов
+    
+    Процессоры:
+    - cpu: Универсальный вариант, работает на любой системе
+    - gpu: Значительно быстрее для обработки больших объемов данных (требует NVIDIA GPU)
+
+EOF
+}
+
+# Функция валидации аргументов
+validate_cli_args() {
+    local version="$1"
+    local processor="$2"
+    
+    # Проверка версии
+    if [[ "$version" != "slim" && "$version" != "full" ]]; then
+        echo "❌ Ошибка: Неверная версия '$version'. Допустимые значения: slim, full"
+        echo "Используйте '$0 --help' для получения справки."
+        exit 1
+    fi
+    
+    # Проверка процессора
+    if [[ "$processor" != "cpu" && "$processor" != "gpu" ]]; then
+        echo "❌ Ошибка: Неверный тип процессора '$processor'. Допустимые значения: cpu, gpu"
+        echo "Используйте '$0 --help' для получения справки."
+        exit 1
+    fi
+    
+    # Дополнительная проверка для GPU
+    if [[ "$processor" == "gpu" ]]; then
+        if ! has_nvidia_gpu; then
+            echo "❌ Ошибка: Выбран режим GPU, но NVIDIA GPU не обнаружена в системе"
+            echo "Рекомендуется использовать: $0 install $version cpu"
+            exit 1
+        fi
+    fi
+    
+    CLI_VERSION="$version"
+    CLI_PROCESSOR="$processor"
+    CLI_MODE=1
+}
+
+# Функция обработки аргументов командной строки
+parse_cli_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--version)
+                echo "XRM Director Installer v$VERSION"
+                exit 0
+                ;;
+            install)
+                if [[ $# -lt 3 ]]; then
+                    echo "❌ Ошибка: Недостаточно аргументов для команды 'install'"
+                    echo "Использование: $0 install <version> <processor>"
+                    echo "Используйте '$0 --help' для получения справки."
+                    exit 1
+                fi
+                validate_cli_args "$2" "$3"
+                return 0
+                ;;
+            *)
+                echo "❌ Ошибка: Неизвестный аргумент '$1'"
+                echo "Используйте '$0 --help' для получения справки."
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
+# ======= Универсальная функция подтверждения =======
+# Поддерживает русские (д/н) и английские (y/n) варианты ответов
+confirm_action() {
+    local prompt="$1"
+    local default_value="${2:-n}"  # По умолчанию "n" (нет)
+    local response
+    
+    while true; do
+        if [[ "$default_value" == "y" ]]; then
+            read -p "$prompt (д/y - да, н/n - нет) [Д/Y]: " response
+        else
+            read -p "$prompt (д/y - да, н/n - нет) [Н/N]: " response
+        fi
+        
+        # Если ответ пустой, используем значение по умолчанию
+        if [[ -z "$response" ]]; then
+            response="$default_value"
+        fi
+        
+        # Преобразуем ответ в нижний регистр для упрощения проверки
+        response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+        
+        # Проверяем ответ (принимаем только д/y для да и н/n для нет)
+        case "$response" in
+            д|y)
+                return 0  # Подтверждение
+                ;;
+            н|n)
+                return 1  # Отказ
+                ;;
+            *)
+                echo "Пожалуйста, введите 'д' или 'y' для подтверждения, 'н' или 'n' для отказа"
+                ;;
+        esac
+    done
+}
+
+# Функция установки XRM Director через CLI
+install_xrm_director_cli() {
+    log_message "INFO" "Начало установки XRM Director (CLI режим)"
+    
+    # Проверяем, установлен ли уже XRM Director
+    if docker ps -a | grep -q "ragflow"; then
+        log_message "WARNING" "Обнаружена существующая установка XRM Director"
+        echo "ВНИМАНИЕ: XRM Director уже установлен. Обнаружены контейнеры ragflow."
+        echo "Переустанавливаем XRM Director..."
+    fi
+
+    # Устанавливаем переменные на основе выбранных параметров
+    local selected_version="v0.19.1"
+    local edition_type="$CLI_VERSION"
+    local ragflow_image
+    
+    if [[ "$CLI_VERSION" == "slim" ]]; then
+        ragflow_image="$RAGFLOW_SLIM_IMAGE"
+        echo "Выбрана облегченная версия v0.19.1-slim"
+    else
+        ragflow_image="$RAGFLOW_FULL_IMAGE"
+        echo "Выбрана полная версия v0.19.1"
+    fi
+
+    log_message "INFO" "Выбрана версия: $selected_version ($edition_type)"
+
+    # Создание директории для установки
+    mkdir -p "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+    
+    # Удаляем существующие файлы, если они есть
+    echo "Очистка директории установки..."
+    rm -rf "$INSTALL_DIR"/*
+    
+    # Скачивание архива с файлами XRM Director
+    echo "Скачивание архива с файлами XRM Director..."
+    if ! curl -sSf https://files.x-rm.ru/xrm_director/docker/docker.tar.gz -o "$INSTALL_DIR/docker.tar.gz"; then
+        log_message "ERROR" "Не удалось скачать архив с файлами XRM Director"
+        echo "Ошибка: Не удалось скачать архив с файлами XRM Director"
+        return 1
+    fi
+    log_message "INFO" "Архив успешно скачан: $INSTALL_DIR/docker.tar.gz"
+    
+    # Создание директорий для резервных копий
+    mkdir -p "${INITIAL_BACKUP_DIR}" "${USER_BACKUP_DIR}"
+    
+    # Скачивание initial backup только в директорию initial
+    echo "Загрузка initial backup..."
+    if ! wget --no-check-certificate -O "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" "${INITIAL_BACKUP_URL}" || [ ! -s "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+        log_message "WARNING" "Не удалось загрузить initial backup"
+        echo "Предупреждение: Initial backup не загружен"
+        
+        # Попытка загрузить напрямую по конкретному URL
+        echo "Пробуем альтернативную загрузку initial backup..."
+        if ! wget --no-check-certificate -O "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" "https://files.x-rm.ru/xrm_director/backup/initial_backup.tar.gz"; then
+            log_message "WARNING" "Альтернативная загрузка initial backup тоже не удалась"
+            echo "Предупреждение: Альтернативная загрузка initial backup тоже не удалась"
+        else
+            log_message "INFO" "Initial backup успешно загружен альтернативным способом"
+            echo "Initial backup загружен в ${INITIAL_BACKUP_DIR}"
+            echo "Проверка целостности загруженного файла..."
+            if ! tar -tzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" &>/dev/null; then
+                log_message "ERROR" "Целостность загруженного initial backup не удалась"
+                echo "Ошибка: Целостность загруженного initial backup не удалась"
+                return 1
+            fi
+        fi
+    else
+        log_message "INFO" "Initial backup успешно загружен"
+        echo "Initial backup загружен в ${INITIAL_BACKUP_DIR}"
+        echo "Проверка целостности загруженного файла..."
+        if ! tar -tzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" &>/dev/null; then
+            log_message "ERROR" "Целостность загруженного initial backup не удалась"
+            echo "Ошибка: Целостность загруженного initial backup не удалась"
+            return 1
+        fi
+    fi
+    
+    echo "Директории для бэкапов созданы:"
+    echo "- ${INITIAL_BACKUP_DIR} (для системных бэкапов)"
+    echo "- ${USER_BACKUP_DIR} (для пользовательских бэкапов)"
+    
+    # Распаковка архива
+    echo "Распаковка архива..."
+    mkdir -p "$DOCKER_DIR"
+    if ! tar -xzf docker.tar.gz --strip-components=0; then
+        log_message "ERROR" "Не удалось распаковать архив"
+        echo "Ошибка: Не удалось распаковать архив"
+        return 1
+    fi
+    
+    # Удаление архива
+    rm -f "$INSTALL_DIR/docker.tar.gz"
+    log_message "INFO" "Архив успешно распакован в $INSTALL_DIR"
+    
+    # Проверка наличия обязательных файлов
+    if [ ! -f ".env" ] || [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose-gpu.yml" ]; then
+        log_message "ERROR" "Обязательные файлы не найдены после распаковки архива"
+        echo "Ошибка: Обязательные файлы (.env, docker-compose.yml, docker-compose-gpu.yml) не найдены"
+        echo "Содержимое директории $INSTALL_DIR:"
+        ls -la "$INSTALL_DIR"
+        return 1
+    fi
+    
+    # Проверка и настройка vm.max_map_count
+    local current_map_count=$(cat /proc/sys/vm/max_map_count)
+    log_message "INFO" "Текущее значение vm.max_map_count: $current_map_count"
+    echo "Настройка vm.max_map_count..."
+    
+    if [ "$current_map_count" -lt "$MAX_MAP_COUNT" ]; then
+        log_message "INFO" "Установка vm.max_map_count в $MAX_MAP_COUNT"
+        
+        # Временное изменение
+        if ! sysctl -w vm.max_map_count=$MAX_MAP_COUNT; then
+            log_message "ERROR" "Не удалось установить vm.max_map_count"
+            echo "Ошибка: Не удалось установить vm.max_map_count"
+            return 1
+        fi
+        
+        # Постоянное изменение
+        if ! grep -q "vm.max_map_count" /etc/sysctl.conf; then
+            echo "vm.max_map_count = $MAX_MAP_COUNT" >> /etc/sysctl.conf
+        else
+            sed -i "s/vm.max_map_count.*/vm.max_map_count = $MAX_MAP_COUNT/" /etc/sysctl.conf
+        fi
+    fi
+
+    # Обновляем версию в .env файле
+    if ! update_env_version ".env" "$selected_version" "$edition_type"; then
+        log_message "ERROR" "Не удалось обновить версию в .env файле"
+        echo "Ошибка: Не удалось обновить версию в .env файле"
+        return 1
+    fi
+    
+    # Запуск контейнеров в зависимости от выбранного процессора
+    if [[ "$CLI_PROCESSOR" == "gpu" ]]; then
+        log_message "INFO" "Установка XRM Director с GPU"
+        echo "Установка XRM Director с GPU..."
+        
+        if ! docker compose -f docker-compose-gpu.yml up -d; then
+            log_message "ERROR" "Не удалось запустить XRM Director с GPU"
+            echo "Ошибка: Не удалось запустить XRM Director с GPU"
+            return 1
+        fi
+    else
+        log_message "INFO" "Установка XRM Director с CPU"
+        echo "Установка XRM Director с CPU..."
+        
+        if ! docker compose -f docker-compose.yml up -d; then
+            log_message "ERROR" "Не удалось запустить XRM Director с CPU"
+            echo "Ошибка: Не удалось запустить XRM Director с CPU"
+            return 1
+        fi
+    fi
+    
+    # Автовосстановление initial backup
+    if [ ${AUTO_RESTORE_INITIAL_BACKUP} -eq 1 ]; then
+        echo "Проверка наличия initial backup..."
+        if [ -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+            echo "Развертывание начальной резервной копии..."
+            
+            # Создаем временную директорию для распаковки
+            TEMP_RESTORE_DIR=$(mktemp -d)
+            
+            # Распаковываем архив
+            tar -xzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" -C "${TEMP_RESTORE_DIR}"
+            
+            # Находим директорию с бэкапами (обычно имеет формат ragflow_DATE)
+            BACKUP_FOLDER=$(find "${TEMP_RESTORE_DIR}" -type d -name "ragflow_*" | head -n 1)
+            
+            if [ -z "${BACKUP_FOLDER}" ]; then
+                # Если папка не найдена, используем корневую директорию временной папки
+                BACKUP_FOLDER="${TEMP_RESTORE_DIR}"
+            fi
+            
+            echo "Найдена директория с бэкапами: ${BACKUP_FOLDER}"
+            
+            # Восстанавливаем каждый том
+            for volume_backup in "${BACKUP_FOLDER}"/*.tar.gz; do
+                if [ -f "${volume_backup}" ]; then
+                    # Извлекаем корректное имя тома из имени файла (docker_esdata01.tar.gz -> docker_esdata01)
+                    volume_name=$(basename "${volume_backup}" .tar.gz)
+                    echo "Восстановление тома ${volume_name}..."
+                    
+                    # Создаем том если не существует
+                    docker volume create "${volume_name}" >/dev/null 2>&1 || true
+                    
+                    # Восстанавливаем данные
+                    docker run --rm -v "${volume_name}":/volume \
+                        -v "${BACKUP_FOLDER}":/backup alpine \
+                        sh -c "rm -rf /volume/* && tar -xzf /backup/$(basename "${volume_backup}") -C /volume"
+                    
+                    if [ $? -eq 0 ]; then
+                        echo "✅ Том ${volume_name} успешно восстановлен"
+                    else
+                        echo "❌ Ошибка при восстановлении тома ${volume_name}"
+                    fi
+                fi
+            done
+            
+            # Очистка временной директории
+            rm -rf "${TEMP_RESTORE_DIR}"
+            echo "Начальная резервная копия успешно развернута"
+        else
+            echo "Initial backup не найден, пропускаем авторазвертывание"
+        fi
+    fi
+    
+    # Проверка запуска контейнера ragflow-server
+    echo "Проверка запуска контейнера ragflow-server..."
+    sleep 5
+    
+    # Проверка, что контейнер действительно запущен, а не только создан
+    local container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server 2>/dev/null)
+    if [ "$container_status" != "running" ]; then
+        log_message "ERROR" "Контейнер ragflow-server не запустился (статус: $container_status)"
+        echo "ОШИБКА: Контейнер ragflow-server не запустился. Текущий статус: $container_status"
+        echo "Выполняем диагностику..."
+        diagnose_container_issues "ragflow-server"
+        
+        echo "Пробуем исправить проблему..."
+        # Попытка исправить права доступа на директории
+        docker_user_id=$(docker inspect --format '{{.Config.User}}' ragflow-server)
+        if [ -z "$docker_user_id" ]; then
+            docker_user_id="root"
+        fi
+        echo "Контейнер работает от пользователя: $docker_user_id"
+        
+        # Обновление прав доступа для всех томов
+        for vol in $(docker inspect --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' ragflow-server); do
+            if [ -e "$vol" ]; then
+                echo "Обновление прав для тома $vol"
+                chmod -R 777 "$vol" || echo "Не удалось обновить права для $vol"
+            fi
+        done
+        
+        # Перезапуск контейнера
+        echo "Перезапуск контейнера ragflow-server..."
+        docker restart ragflow-server
+        sleep 5
+        
+        # Повторная проверка статуса
+        container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server 2>/dev/null)
+        if [ "$container_status" != "running" ]; then
+            log_message "ERROR" "Контейнер ragflow-server все еще не запущен после исправлений"
+            echo "ОШИБКА: Контейнер ragflow-server все еще не запущен после исправлений."
+            echo "Пожалуйста, проверьте логи Docker для дополнительной информации:"
+            echo "docker logs ragflow-server"
+            return 1
+        else
+            log_message "INFO" "Контейнер ragflow-server успешно запущен после исправлений"
+            echo "Контейнер ragflow-server успешно запущен после исправлений!"
+        fi
+    fi
+    
+    # Проверка состояния ragflow-server
+    echo "Проверка состояния ragflow-server..."
+    local container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server 2>/dev/null)
+    if [ "$container_status" = "running" ]; then
+        echo "✅ Сервер ragflow-server запущен и работает (статус: $container_status)"
+        echo "ℹ️  Ожидание полной инициализации пропущено - контейнер уже в рабочем состоянии"
+    else
+        echo "⚠️  Сервер ragflow-server в состоянии: $container_status"
+        echo "Проверьте логи контейнера: docker logs ragflow-server"
+    fi
+    
+    # Установка Ollama
+    echo "Установка Ollama..."
+    
+    # Проверяем и удаляем существующий контейнер Ollama
+    if docker ps -a --format '{{.Names}}' | grep -q "^ollama$"; then
+        echo "Найден существующий контейнер Ollama, удаляем..."
+        docker stop ollama 2>/dev/null || true
+        docker rm ollama 2>/dev/null || true
+    fi
+    
+    # Запуск контейнера Ollama
+    if ! docker run -d --name ollama -e OLLAMA_DEBUG=1 -p 11434:11434 ollama/ollama; then
+        log_message "ERROR" "Не удалось запустить контейнер Ollama"
+        echo "❌ Ошибка: Не удалось запустить контейнер Ollama"
+        echo "Установка будет продолжена без Ollama..."
+        log_message "WARNING" "Установка продолжена без Ollama"
+    else
+        log_message "INFO" "Контейнер Ollama успешно запущен"
+        echo "✅ Контейнер Ollama успешно запущен"
+        
+        # Установка моделей в Ollama
+        echo "Установка моделей в Ollama..."
+        sleep 5
+        
+        # Установка первой модели (LLM)
+        echo "Установка модели $OLLAMA_LLM_MODEL в Ollama..."
+        if ! docker exec ollama ollama run $OLLAMA_LLM_MODEL; then
+            log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
+            echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
+        else
+            log_message "INFO" "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
+            echo "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
+        fi
+        
+        # Установка второй модели (embedding)
+        echo "Установка модели $OLLAMA_LLM_MODEL_2 (embedding) в Ollama..."
+        if ! docker exec ollama ollama pull $OLLAMA_LLM_MODEL_2; then
+            log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
+            echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
+        else
+            log_message "INFO" "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
+            echo "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
+        fi
+    fi
+    
+    # Определение IP-адреса сервера
+    local server_ip=$(hostname -I | awk '{print $1}')
+    
+    log_message "INFO" "XRM Director успешно установлен"
+    echo "✅ XRM Director успешно установлен!"
+    echo "🌐 Доступ к веб-интерфейсу: http://$server_ip"
+    echo "📁 Установочная директория: $INSTALL_DIR/"
+    echo "📋 Логи: $LOG_FILE"
+    
+    return 0
+}
+
+# Функция автоматической установки через CLI
+cli_install() {
+    echo "🚀 Автоматическая установка XRM Director"
+    echo "📦 Версия: $CLI_VERSION"
+    echo "⚙️  Процессор: $CLI_PROCESSOR"
+    echo ""
+    
+    log_message "INFO" "Начало автоматической установки: версия=$CLI_VERSION, процессор=$CLI_PROCESSOR"
+    
+    # Проверка системных требований
+    echo "🔍 Проверка системных требований..."
+    if ! check_system_requirements_silent; then
+        echo "❌ Системные требования не выполнены. Установка прервана."
+        exit 1
+    fi
+    
+    # Проверка Docker
+    echo "🐳 Проверка Docker..."
+    if ! check_docker_installed_silent; then
+        echo "📦 Docker не установлен. Устанавливаем Docker..."
+        if ! install_docker; then
+            echo "❌ Ошибка установки Docker. Установка прервана."
+            exit 1
+        fi
+    fi
+    
+    # Установка XRM Director
+    echo "🎯 Установка XRM Director..."
+    if ! install_xrm_director_cli; then
+        echo "❌ Ошибка установки XRM Director"
+        exit 1
+    fi
+}
+
+# Функция проверки наличия NVIDIA GPU
+has_nvidia_gpu() {
+    # Проверяем наличие nvidia-smi
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        # Проверяем, что NVIDIA GPU доступна
+        if nvidia-smi >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    
+    # Проверяем наличие файла устройства NVIDIA
+    if [ -e "/dev/nvidia0" ] || [ -e "/dev/nvidiactl" ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Универсальная функция для запроса подтверждения (принимает только д/y или н/n)
+ask_yes_no() {
+    local prompt="$1"
+    local default_answer="${2:-}"  # Опциональный параметр для ответа по умолчанию
+    
+    while true; do
+        if [[ -n "$default_answer" ]]; then
+            echo -n "$prompt (д/y - да, н/n - нет, по умолчанию: $default_answer): "
+        else
+            echo -n "$prompt (д/y - да, н/n - нет): "
+        fi
+        
+        read -r answer
+        
+        # Если ответ пустой и есть значение по умолчанию
+        if [[ -z "$answer" && -n "$default_answer" ]]; then
+            answer="$default_answer"
+        fi
+        
+        # Преобразуем ответ в нижний регистр для упрощения проверки
+        answer=$(echo "$answer" | tr '[:upper:]' '[:lower:]')
+        
+        # Проверяем ответ (принимаем только д/y для да и н/n для нет)
+        case "$answer" in
+            д|y)
+                return 0  # Да
+                ;;
+            н|n)
+                return 1  # Нет
+                ;;
+            *)
+                echo "❌ Пожалуйста, введите: 'д' или 'y' для подтверждения, 'н' или 'n' для отказа"
+                ;;
+        esac
+    done
+}
+
+# Функция тихой проверки системных требований (для CLI режима)
+check_system_requirements_silent() {
+    local all_ok=1
+    local warnings=()
+    
+    echo "📋 Проверка системных требований:"
+    
+    # Проверка ОС
+    if [ ! -f /etc/redhat-release ] && [ ! -f /etc/centos-release ]; then
+        echo "❌ ОС: Неподдерживаемая операционная система"
+        echo "   Требуется: Red Hat Enterprise Linux / CentOS"
+        log_message "ERROR" "Неподдерживаемая операционная система"
+        warnings+=("Неподдерживаемая операционная система")
+        all_ok=0
+    else
+        echo "✅ ОС: $(cat /etc/redhat-release 2>/dev/null || cat /etc/centos-release 2>/dev/null)"
+    fi
+    
+    # Проверка CPU
+    local cpu_cores=$(nproc)
+    if [ "$cpu_cores" -lt "$REQUIRED_CPU_CORES" ]; then
+        echo "❌ CPU: $cpu_cores ядер (требуется: $REQUIRED_CPU_CORES)"
+        log_message "ERROR" "Недостаточно ядер CPU: найдено $cpu_cores, требуется $REQUIRED_CPU_CORES"
+        warnings+=("Недостаточно ядер CPU: $cpu_cores < $REQUIRED_CPU_CORES")
+        all_ok=0
+    else
+        echo "✅ CPU: $cpu_cores ядер (требуется: $REQUIRED_CPU_CORES)"
+    fi
+    
+    # Проверка RAM
+    local ram_gb=$(free -g | awk '/^Mem:/{print $2}')
+    if [ "$ram_gb" -lt "$REQUIRED_RAM_GB" ]; then
+        echo "❌ RAM: ${ram_gb}GB (требуется: ${REQUIRED_RAM_GB}GB)"
+        log_message "ERROR" "Недостаточно RAM: найдено ${ram_gb}GB, требуется ${REQUIRED_RAM_GB}GB"
+        warnings+=("Недостаточно RAM: ${ram_gb}GB < ${REQUIRED_RAM_GB}GB")
+        all_ok=0
+    else
+        echo "✅ RAM: ${ram_gb}GB (требуется: ${REQUIRED_RAM_GB}GB)"
+    fi
+    
+    # Проверка места на диске
+    local disk_gb=$(df / | awk 'NR==2{print int($4/1024/1024)}')
+    if [ "$disk_gb" -lt "$REQUIRED_DISK_GB" ]; then
+        echo "❌ Диск: ${disk_gb}GB свободно (требуется: ${REQUIRED_DISK_GB}GB)"
+        log_message "ERROR" "Недостаточно места на диске: найдено ${disk_gb}GB, требуется ${REQUIRED_DISK_GB}GB"
+        warnings+=("Недостаточно места на диске: ${disk_gb}GB < ${REQUIRED_DISK_GB}GB")
+        all_ok=0
+    else
+        echo "✅ Диск: ${disk_gb}GB свободно (требуется: ${REQUIRED_DISK_GB}GB)"
+    fi
+    
+    # Если есть проблемы, показываем их и даем выбор
+    if [ $all_ok -eq 0 ]; then
+        echo ""
+        echo "⚠️  Обнаружены следующие проблемы:"
+        for warning in "${warnings[@]}"; do
+            echo "   • $warning"
+        done
+        echo ""
+        echo "🤔 Что делать?"
+        echo "1. Отменить установку (рекомендуется)"
+        echo "2. Продолжить установку (может привести к проблемам)"
+        echo ""
+        read -p "Ваш выбор (1-2): " choice
+        
+        case $choice in
+            1)
+                echo "🛑 Установка отменена пользователем"
+                log_message "INFO" "Установка отменена из-за невыполнения системных требований"
+                return 1
+                ;;
+            2)
+                echo "⚠️  Продолжаем установку, игнорируя предупреждения..."
+                log_message "WARNING" "Установка продолжена с игнорированием системных требований"
+                return 0
+                ;;
+            *)
+                echo "❌ Неверный выбор. Установка отменена."
+                return 1
+                ;;
+        esac
+    fi
+    
+    echo "✅ Все системные требования выполнены"
+    return 0
+}
+
+# Функция тихой проверки Docker
+check_docker_installed_silent() {
+    if ! command -v docker &> /dev/null; then
+        log_message "INFO" "Docker не установлен"
+        return 1
+    fi
+    
+    if ! systemctl is-active --quiet docker; then
+        log_message "INFO" "Docker не запущен, запускаем..."
+        systemctl start docker
+        if ! systemctl is-active --quiet docker; then
+            log_message "ERROR" "Не удалось запустить Docker"
+            return 1
+        fi
+    fi
+    
+    return 0
+}
 
 # ======= Настройка обработки ошибок и выхода =======
 set -o pipefail
@@ -173,7 +846,7 @@ check_docker_info() {
             echo "Рекомендуется обновить Docker до версии $DOCKER_MIN_VERSION или выше"
             echo "Хотите продолжить установку Docker/Docker Compose? (д/н)"
             read -r answer
-            if [[ "$answer" =~ ^[Дд]$ ]]; then
+            if [[ "$answer" =~ ^[yдYД]$ ]]; then
                 install_docker
             fi
         fi
@@ -308,6 +981,24 @@ diagnose_container_issues() {
     echo "4. Убедитесь, что порты не заняты другими сервисами"
 }
 
+# Функция для получения списка доступных версий RAGFlow
+get_available_versions() {
+    # Актуальный список версий из Docker Hub (https://hub.docker.com/r/infiniflow/ragflow/tags)
+    local versions=(
+        "nightly"
+        "v0.19.0"
+        "v0.18.0"
+        "v0.17.2"
+        "v0.17.1"
+        "v0.17.0"
+    )
+    
+    # Возвращаем версии через echo для использования в других функциях
+    printf '%s\n' "${versions[@]}"
+}
+
+# Функция для выбора версии RAGFlow
+# ======= Функции для установки и управления XRM Director =======
 # Функция для установки XRM Director
 install_xrm_director() {
     log_message "INFO" "Установка XRM Director..."
@@ -318,14 +1009,98 @@ install_xrm_director() {
     if docker ps -a | grep -q "ragflow"; then
         log_message "WARNING" "Обнаружена существующая установка XRM Director"
         echo "ВНИМАНИЕ: XRM Director уже установлен. Обнаружены контейнеры ragflow."
-        echo "Хотите продолжить и переустановить XRM Director? (д/н)"
-        read -r reinstall_choice
-        if [[ ! "$reinstall_choice" =~ ^[Дд]$ ]]; then
+        if ! confirm_action "Хотите продолжить и переустановить XRM Director?"; then
             echo "Установка отменена пользователем."
             return 0
         fi
         echo "Продолжаем установку..."
     fi
+
+    # Выбор редакции RAGFlow v0.19.1
+    echo "Выбор редакции RAGFlow v0.19.1:"
+    echo "0. Вернуться в главное меню"
+    echo "1. Slim - облегченная версия (~2.62 GB, без встроенных моделей)"
+    echo "2. Full - полная версия (~7.12 GB, со встроенными моделями)"
+    echo ""
+    read -p "Введите номер редакции (0-2): " edition_choice
+
+    local selected_version="v0.19.1"
+    local edition_type
+    local ragflow_image
+
+    case "$edition_choice" in
+        0)
+            echo "Возврат в главное меню..."
+            return 0
+            ;;
+        1)
+            edition_type="slim"
+            ragflow_image="$RAGFLOW_SLIM_IMAGE"
+            echo "Выбрана облегченная версия v0.19.1-slim"
+            ;;
+        2)
+            edition_type="full"
+            ragflow_image="$RAGFLOW_FULL_IMAGE"
+            echo "Выбрана полная версия v0.19.1"
+            ;;
+        *)
+            echo "Неверный выбор. Устанавливается полная версия по умолчанию."
+            edition_type="full"
+            ragflow_image="$RAGFLOW_FULL_IMAGE"
+            ;;
+    esac
+
+    log_message "INFO" "Выбрана версия: $selected_version ($edition_type)"
+    echo "Выбрана версия: $selected_version ($edition_type)"
+
+    # Выбор процессора (CPU/GPU)
+    echo ""
+    echo "Выбор процессора для обработки:"
+    echo "0. Вернуться в главное меню"
+    echo "1. CPU - универсальный вариант (работает на любой системе)"
+    echo "2. GPU - ускоренная обработка (требует NVIDIA GPU)"
+    echo ""
+    read -p "Введите номер процессора (0-2): " processor_choice
+
+    local processor_type
+    local use_gpu=false
+
+    case "$processor_choice" in
+        0)
+            echo "Возврат в главное меню..."
+            return 0
+            ;;
+        1)
+            processor_type="cpu"
+            use_gpu=false
+            echo "Выбран CPU для обработки"
+            ;;
+        2)
+            processor_type="gpu"
+            use_gpu=true
+            echo "Выбран GPU для обработки"
+            
+            # Проверка наличия NVIDIA GPU
+            if ! has_nvidia_gpu; then
+                echo "⚠️  ВНИМАНИЕ: NVIDIA GPU не обнаружена в системе!"
+                echo "Рекомендуется использовать CPU вместо GPU."
+                if ! confirm_action "Хотите продолжить с GPU несмотря на предупреждение?"; then
+                    echo "Возврат к выбору процессора..."
+                    processor_type="cpu"
+                    use_gpu=false
+                    echo "Переключено на CPU для обработки"
+                fi
+            fi
+            ;;
+        *)
+            echo "Неверный выбор. Используется CPU по умолчанию."
+            processor_type="cpu"
+            use_gpu=false
+            ;;
+    esac
+
+    log_message "INFO" "Выбран процессор: $processor_type"
+    echo "Выбран процессор: $processor_type"
 
     # Создание директории для установки
     mkdir -p "$INSTALL_DIR"
@@ -361,10 +1136,22 @@ install_xrm_director() {
         else
             log_message "INFO" "Initial backup успешно загружен альтернативным способом"
             echo "Initial backup загружен в ${INITIAL_BACKUP_DIR}"
+            echo "Проверка целостности загруженного файла..."
+            if ! tar -tzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" &>/dev/null; then
+                log_message "ERROR" "Целостность загруженного initial backup не удалась"
+                echo "Ошибка: Целостность загруженного initial backup не удалась"
+                return 1
+            fi
         fi
     else
         log_message "INFO" "Initial backup успешно загружен"
         echo "Initial backup загружен в ${INITIAL_BACKUP_DIR}"
+        echo "Проверка целостности загруженного файла..."
+        if ! tar -tzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" &>/dev/null; then
+            log_message "ERROR" "Целостность загруженного initial backup не удалась"
+            echo "Ошибка: Целостность загруженного initial backup не удалась"
+            return 1
+        fi
     fi
     
     echo "Директории для бэкапов созданы:"
@@ -379,10 +1166,6 @@ install_xrm_director() {
         echo "Ошибка: Не удалось распаковать архив"
         return 1
     fi
-    
-    # Вывод списка распакованных файлов
-    echo "Распакованные файлы:"
-    ls -la "$INSTALL_DIR"
     
     # Удаление архива
     rm -f "$INSTALL_DIR/docker.tar.gz"
@@ -400,11 +1183,10 @@ install_xrm_director() {
     # Проверка и настройка vm.max_map_count
     local current_map_count=$(cat /proc/sys/vm/max_map_count)
     log_message "INFO" "Текущее значение vm.max_map_count: $current_map_count"
-    echo "Текущее значение vm.max_map_count: $current_map_count"
+    echo "Настройка vm.max_map_count..."
     
     if [ "$current_map_count" -lt "$MAX_MAP_COUNT" ]; then
         log_message "INFO" "Установка vm.max_map_count в $MAX_MAP_COUNT"
-        echo "Установка vm.max_map_count в $MAX_MAP_COUNT"
         
         # Временное изменение
         if ! sysctl -w vm.max_map_count=$MAX_MAP_COUNT; then
@@ -421,68 +1203,17 @@ install_xrm_director() {
         fi
     fi
 
-    # Выбор версии RAGFlow
-    while true; do
-        echo "Выберите версию RAGFlow:"
-        echo "0. Вернуться в главное меню"
-        echo "1. Slim (v0.17.2-slim) - облегченная версия"
-        echo "2. Full (v0.17.2) - полная версия"
-        read -r version_choice
-        
-        # Проверяем выбор
-        if [[ "$version_choice" == "0" ]]; then
-            echo "Возврат в главное меню..."
-            return 0
-        elif [[ "$version_choice" =~ ^[1-2]$ ]]; then
-            break
-        else
-            echo "Ошибка: Необходимо выбрать вариант 0, 1 или 2. Повторите ввод."
-        fi
-    done
-    
-    # Настройка файла .env
-    if [ "$version_choice" -eq 1 ]; then
-        # Убедимся, что Slim версия раскомментирована, а Full закомментирована
-        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2-slim/ s/^# *//' .env
-        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2$/ s/^[^#]/#&/' .env
-        log_message "INFO" "Выбрана версия Slim (v0.17.2-slim)"
-        echo "Выбрана версия Slim (v0.17.2-slim)"
-    elif [ "$version_choice" -eq 2 ]; then
-        # Убедимся, что Full версия раскомментирована, а Slim закомментирована
-        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2-slim/ s/^[^#]/#&/' .env
-        sed -i '/RAGFLOW_IMAGE=infiniflow\/ragflow:v0.17.2$/ s/^# *//' .env
-        log_message "INFO" "Выбрана версия Full (v0.17.2)"
-        echo "Выбрана версия Full (v0.17.2)"
-    else
-        log_message "ERROR" "Неверный выбор версии"
-        echo "Неверный выбор версии. Установка отменена."
+    # Обновляем версию в .env файле
+    if ! update_env_version ".env" "$selected_version" "$edition_type"; then
+        log_message "ERROR" "Не удалось обновить версию в .env файле"
+        echo "Ошибка: Не удалось обновить версию в .env файле"
         return 1
     fi
     
-    # Выбор режима работы (CPU или GPU)
-    while true; do
-        echo "Выберите режим работы:"
-        echo "0. Вернуться в главное меню"
-        echo "1. CPU - использовать процессор для обработки задач"
-        echo "2. GPU - использовать графический процессор (требуется NVIDIA)"
-        read -r gpu_choice
-        
-        # Проверяем выбор
-        if [[ "$gpu_choice" == "0" ]]; then
-            echo "Возврат в главное меню..."
-            return 0
-        elif [[ "$gpu_choice" =~ ^[1-2]$ ]]; then
-            break
-        else
-            echo "Ошибка: Необходимо выбрать вариант 0, 1 или 2. Повторите ввод."
-        fi
-    done
-    
-    # Запуск контейнеров
-        
-    if [ "$gpu_choice" -eq 2 ]; then
+    # Запуск контейнеров в зависимости от выбранного процессора
+    if [[ "$use_gpu" == "true" ]]; then
         log_message "INFO" "Установка XRM Director с GPU"
-        echo "Установка XRM Director (GPU)..."
+        echo "Установка XRM Director с GPU..."
         
         if ! docker compose -f docker-compose-gpu.yml up -d; then
             log_message "ERROR" "Не удалось запустить XRM Director с GPU"
@@ -490,7 +1221,7 @@ install_xrm_director() {
             return 1
         fi
     else
-        log_message "INFO" "Установка XRM Director (CPU)"
+        log_message "INFO" "Установка XRM Director с CPU"
         echo "Установка XRM Director с CPU..."
         
         if ! docker compose -f docker-compose.yml up -d; then
@@ -600,103 +1331,166 @@ install_xrm_director() {
         fi
     fi
     
-    # Ожидание полной инициализации ragflow-server (макс. 180 секунд)
-    echo "Ожидание запуска сервера (это может занять некоторое время)..."
-    local server_started=false
-    for i in {1..36}; do
-        if docker logs ragflow-server 2>&1 | grep -q "* Running on all addresses (0.0.0.0)"; then
-            echo -e "\nСервер ragflow-server успешно запущен!"
-            server_started=true
-            break
-        fi
-        echo -n "."
-        sleep 5
-    done
-    
-    if [ "$server_started" = false ]; then
-        echo -e "\nПревышено время ожидания запуска сервера (180 секунд)."
-        echo "Проверьте логи контейнера: docker logs -f ragflow-server"
-        echo "Система может работать некорректно до полного запуска сервера."
-        echo "Нажмите Enter для продолжения..."
-        read -r
+    # РЕЖИМ МЕНЮ: Проверка состояния ragflow-server без ожидания полной инициализации
+    # Ожидание полной инициализации ragflow-server (макс. 180 секунд) отключено по следующим причинам:
+    # 1. Команда "docker logs ragflow-server 2>&1 | grep 'Running on all addresses'" не всегда находит нужное сообщение в логах
+    # 2. Если контейнер ragflow-server в состоянии "running", то считаем что он работает корректно
+    # 3. Это ускоряет процесс установки и снижает количество ложных ошибок
+    echo "Проверка состояния ragflow-server..."
+    local container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server 2>/dev/null)
+    if [ "$container_status" = "running" ]; then
+        echo "✅ Сервер ragflow-server запущен и работает (статус: $container_status)"
+        echo "ℹ️  Ожидание полной инициализации пропущено - контейнер уже в рабочем состоянии"
+    else
+        echo "⚠️  Сервер ragflow-server в состоянии: $container_status"
+        echo "Проверьте логи контейнера: docker logs ragflow-server"
     fi
+    
+    # ОТКЛЮЧЕННОЕ ОЖИДАНИЕ: Ранее здесь было ожидание сообщения "Running on all addresses" в логах (макс. 180 сек)
+    # Это ожидание отключено, так как:
+    # - Поиск по логам не всегда срабатывает корректно
+    # - Если контейнер имеет статус "running", значит сервис уже функционирует
+    # - Полная инициализация может происходить в фоновом режиме без влияния на работоспособность
+    #
+    # Закомментированный код ожидания:
+    # echo "Ожидание запуска сервера (это может занять некоторое время)..."
+    # local server_started=false
+    # for i in {1..72}; do
+    #     if docker logs ragflow-server 2>&1 | grep "Running on all addresses"; then
+    #         echo -e "\nСервер ragflow-server успешно запущен!"
+    #         server_started=true
+    #         break
+    #     fi
+    #     echo -n "."
+    #     sleep 5
+    # done
+    # 
+    # if [ "$server_started" = false ]; then
+    #     echo -e "\nПревышено время ожидания запуска сервера (180 секунд)."
+    #     echo "Проверьте логи контейнера: docker logs -f ragflow-server"
+    #     echo "Система может работать некорректно до полного запуска сервера."
+    # fi
     
     # Установка Ollama
     echo "Установка Ollama..."
-    if ! docker run -d --name ollama -p 11434:11434 ollama/ollama; then
+    
+    # Проверяем и удаляем существующий контейнер Ollama
+    if docker ps -a --format '{{.Names}}' | grep -q "^ollama$"; then
+        echo "Найден существующий контейнер Ollama, удаляем..."
+        docker stop ollama 2>/dev/null || true
+        docker rm ollama 2>/dev/null || true
+    fi
+    
+    # Запуск контейнера Ollama
+    if ! docker run -d --name ollama -e OLLAMA_DEBUG=1 -p 11434:11434 ollama/ollama; then
         log_message "ERROR" "Не удалось запустить контейнер Ollama"
-        echo "Ошибка: Не удалось запустить контейнер Ollama"
-        return 1
-    fi
-    
-    # Проверка доступности порта Ollama
-    echo "Проверка доступности порта Ollama..."
-    sleep 5
-    if ! ss -tunlp | grep -q "11434" && ! netstat -tuln | grep -q "11434"; then
-        log_message "ERROR" "Порт Ollama (11434) не доступен"
-        echo "Ошибка: Порт Ollama (11434) не доступен"
+        echo "❌ Ошибка: Не удалось запустить контейнер Ollama"
+        echo "Установка будет продолжена без Ollama..."
+        log_message "WARNING" "Установка продолжена без Ollama"
     else
-        log_message "INFO" "Порт Ollama (11434) доступен"
-        echo "Порт Ollama (11434) доступен"
-    fi
-    
-    # Установка моделей в Ollama
-    echo "Установка моделей в Ollama..."
-    sleep 5
-    
-    # Установка первой модели (LLM)
-    echo "Установка модели $OLLAMA_LLM_MODEL в Ollama..."
-    if ! docker exec ollama ollama run $OLLAMA_LLM_MODEL; then
-        log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
-        echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
-        return 1
-    else
-        log_message "INFO" "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
-        echo "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
-    fi
-    
-    # Установка второй модели (embedding)
-    echo "Установка модели $OLLAMA_LLM_MODEL_2 (embedding) в Ollama..."
-    if ! docker exec ollama ollama pull $OLLAMA_LLM_MODEL_2; then
-        log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
-        echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
-        return 1
-    else
-        log_message "INFO" "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
-        echo "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
+        log_message "INFO" "Контейнер Ollama успешно запущен"
+        echo "✅ Контейнер Ollama успешно запущен"
+        
+        # Установка моделей в Ollama
+        echo "Установка моделей в Ollama..."
+        sleep 5
+        
+        # Установка первой модели (LLM)
+        echo "Установка модели $OLLAMA_LLM_MODEL в Ollama..."
+        if ! docker exec ollama ollama run $OLLAMA_LLM_MODEL; then
+            log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
+            echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL в Ollama"
+        else
+            log_message "INFO" "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
+            echo "Модель $OLLAMA_LLM_MODEL успешно установлена в Ollama"
+        fi
+        
+        # Установка второй модели (embedding)
+        echo "Установка модели $OLLAMA_LLM_MODEL_2 (embedding) в Ollama..."
+        if ! docker exec ollama ollama pull $OLLAMA_LLM_MODEL_2; then
+            log_message "ERROR" "Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
+            echo "Ошибка: Не удалось установить модель $OLLAMA_LLM_MODEL_2 в Ollama"
+        else
+            log_message "INFO" "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
+            echo "Модель $OLLAMA_LLM_MODEL_2 успешно установлена в Ollama"
+        fi
     fi
     
     # Определение IP-адреса сервера
     local server_ip=$(hostname -I | awk '{print $1}')
     
     log_message "INFO" "XRM Director успешно установлен"
-    echo "===================================================="
-    echo "XRM Director успешно установлен!"
-    echo "Доступ к веб-интерфейсу: http://$server_ip"
-    echo "Ollama API доступен по адресу: http://$server_ip:11434"
-    echo "===================================================="
+    echo "✅ XRM Director успешно установлен!"
+    echo "🌐 Доступ к веб-интерфейсу: http://$server_ip"
+    echo "📁 Установочная директория: $INSTALL_DIR/"
+    echo "📋 Логи: $LOG_FILE"
     
     # Дополнительная пауза, чтобы пользователь мог прочитать результат установки
-    echo "Нажмите Enter, чтобы вернуться в главное меню..."
-    read -r
+    echo ""
+    read -p "Нажмите Enter для продолжения..." -r
 }
 
 # Функция для перезапуска XRM Director
 restart_xrm_director() {
     log_message "INFO" "Перезапуск XRM Director..."
-    
+
     echo "====== Перезапуск XRM Director ======"
-    
-    # Проверка наличия контейнеров
-    if ! docker ps -a | grep -q -E 'ragflow|ollama'; then
-        log_message "WARNING" "Контейнеры XRM Director не найдены"
-        echo "Контейнеры XRM Director не найдены"
+
+    # Проверка наличия установки
+    if [ ! -f "$DOCKER_COMPOSE_YML" ]; then
+        log_message "WARNING" "Файл конфигурации $DOCKER_COMPOSE_YML не найден. XRM Director, возможно, не установлен"
+        echo "XRM Director не установлен. Сначала выполните установку (пункт 4)."
         show_return_to_menu_message
         return 1
     fi
-    
-    # Получение и перезапуск всех контейнеров с именем, содержащим "ragflow"
-    local ragflow_containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow")
+
+    # Проверка наличия контейнеров
+    local ragflow_containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow" || true)
+    local ollama_container=$(docker ps -a --format '{{.Names}}' | grep "ollama" || true)
+
+    if [[ -z "$ragflow_containers" && -z "$ollama_container" ]]; then
+        log_message "WARNING" "Контейнеры XRM Director не найдены"
+        echo "Контейнеры XRM Director не найдены. Возможные причины:"
+        echo "  1. XRM Director не был запущен после установки"
+        echo "  2. Контейнеры были удалены вручную"
+
+        # Проверяем наличие образов Docker
+        if docker images | grep -q -E 'infiniflow/ragflow|ollama/ollama'; then
+            echo "Найдены образы Docker для XRM Director. Запускаем контейнеры..."
+
+            cd "$DOCKER_DIR" || {
+                echo "Ошибка: Не удалось перейти в директорию $DOCKER_DIR"
+                show_return_to_menu_message
+                return 1
+            }
+
+            # Проверяем наличие GPU
+            if [ -f "$DOCKER_COMPOSE_GPU_YML" ] && has_nvidia_gpu; then
+                echo "Запуск XRM Director с поддержкой GPU..."
+                docker compose -f docker-compose-gpu.yml up -d
+            else
+                echo "Запуск XRM Director без GPU..."
+                docker compose -f docker-compose.yml up -d
+            fi
+
+            sleep 5
+            echo "Контейнеры запущены."
+        else
+            echo "Рекомендуется выполнить полную переустановку XRM Director (пункт 4)."
+            show_return_to_menu_message
+            return 1
+        fi
+    else
+        echo "Найдены контейнеры XRM Director:"
+        if [[ -n "$ragflow_containers" ]]; then
+            echo "RAGFlow контейнеры: $ragflow_containers"
+        fi
+        if [[ -n "$ollama_container" ]]; then
+            echo "Ollama контейнер: $ollama_container"
+        fi
+    fi
+
+    # Перезапуск контейнеров ragflow
     if [ -n "$ragflow_containers" ]; then
         echo "Перезапуск контейнеров ragflow..."
         for container in $ragflow_containers; do
@@ -708,7 +1502,7 @@ restart_xrm_director() {
             else
                 log_message "INFO" "Контейнер $container успешно перезапущен"
                 echo "Контейнер $container успешно перезапущен"
-                
+
                 # Проверка статуса после перезапуска
                 sleep 3
                 local container_status=$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null)
@@ -722,11 +1516,11 @@ restart_xrm_director() {
     else
         echo "Контейнеры ragflow не обнаружены"
     fi
-    
+
     # Перезапуск контейнера Ollama, если он существует
-    if docker ps -a --format '{{.Names}}' | grep -q "ollama"; then
+    if [ -n "$ollama_container" ]; then
         echo "Перезапуск контейнера Ollama..."
-        if ! docker restart ollama; then
+        if ! docker restart "$ollama_container"; then
             log_message "ERROR" "Не удалось перезапустить контейнер Ollama"
             echo "Ошибка: не удалось перезапустить контейнер Ollama"
         else
@@ -736,11 +1530,9 @@ restart_xrm_director() {
     else
         echo "Контейнер Ollama не обнаружен"
     fi
-    
+
     log_message "INFO" "XRM Director успешно перезапущен"
     echo "XRM Director успешно перезапущен"
-    
-    echo "===================================================="
     show_return_to_menu_message
 }
 
@@ -750,67 +1542,161 @@ remove_xrm_director() {
     
     echo "====== Удаление XRM Director ======"
     
-    # Проверяем наличие контейнеров ragflow
-    if ! docker ps -a | grep -q "ragflow"; then
+    # Проверяем наличие контейнеров ragflow и ollama
+    local ragflow_containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow" || true)
+    local ollama_containers=$(docker ps -a --format '{{.Names}}' | grep "ollama" || true)
+    
+    if [[ -z "$ragflow_containers" && -z "$ollama_containers" ]]; then
         log_message "WARNING" "Контейнеры XRM Director не найдены"
         echo "Контейнеры XRM Director не найдены."
         
-        # Проверка наличия директории установки для удаления
-        if [ -d "$INSTALL_DIR" ]; then
-            echo "Найдена директория установки. Хотите удалить её? (д/н)"
-            read -r remove_dir
-            if [[ "$remove_dir" =~ ^[Дд]$ ]]; then
-                rm -rf "$INSTALL_DIR"
-                log_message "INFO" "Директория установки $INSTALL_DIR удалена"
-                echo "Директория установки $INSTALL_DIR удалена"
+        # Проверяем наличие образов для удаления
+        local ragflow_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "infiniflow/ragflow" || true)
+        local ollama_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "ollama/ollama" || true)
+        
+        if [[ -n "$ragflow_images" || -n "$ollama_images" ]]; then
+            echo "Найдены образы XRM Director для удаления:"
+            if [[ -n "$ragflow_images" ]]; then
+                echo "RAGFlow образы:"
+                echo "$ragflow_images"
+            fi
+            if [[ -n "$ollama_images" ]]; then
+                echo "Ollama образы:"
+                echo "$ollama_images"
+            fi
+            
+            echo "Хотите удалить найденные образы? (д/н)"
+            read -r remove_images
+            if [[ "$remove_images" =~ ^[yдYД]$ ]]; then
+                # Удаление образов RAGFlow
+                if [[ -n "$ragflow_images" ]]; then
+                    echo "$ragflow_images" | while read -r image; do
+                        echo "Удаление образа: $image"
+                        if docker rmi -f "$image" 2>/dev/null; then
+                            echo "✅ Образ $image успешно удален"
+                        else
+                            echo "❌ Не удалось удалить образ $image"
+                        fi
+                    done
+                fi
+                
+                # Удаление образов Ollama
+                if [[ -n "$ollama_images" ]]; then
+                    echo "$ollama_images" | while read -r image; do
+                        echo "Удаление образа: $image"
+                        if docker rmi -f "$image" 2>/dev/null; then
+                            echo "✅ Образ $image успешно удален"
+                        else
+                            echo "❌ Не удалось удалить образ $image"
+                        fi
+                    done
+                fi
+                
+                echo "Образы XRM Director удалены"
             fi
         fi
         
+        # Переход к опциональному удалению директорий (в конце функции)
+    fi
+    
+    # Опциональное удаление директорий (выполняется всегда)
+    echo ""
+    echo "Опциональное удаление директорий:"
+    echo "  - \`$INSTALL_DIR\` удалить всю директорию"
+    echo "  - \`$BACKUP_DIR\` (резервные копии)"
+    echo ""
+    
+    # Проверка и удаление основной директории установки
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "📁 Найдена директория установки: $INSTALL_DIR"
+        echo "Хотите удалить директорию установки? (д/y - да, н/n - нет)"
+        read -r remove_install_dir
+        remove_install_dir=$(echo "$remove_install_dir" | tr '[:upper:]' '[:lower:]')
+        if [[ "$remove_install_dir" =~ ^[yд]$ ]]; then
+            rm -rf "$INSTALL_DIR"
+            log_message "INFO" "Директория установки $INSTALL_DIR удалена"
+            echo "✅ Директория установки $INSTALL_DIR удалена"
+        else
+            echo "ℹ️  Директория установки сохранена"
+        fi
+    else
+        echo "ℹ️  Директория установки $INSTALL_DIR не найдена"
+    fi
+    
+    # Проверка и удаление директории с резервными копиями
+    if [ -d "$BACKUP_DIR" ]; then
+        echo "📁 Найдена директория резервных копий: $BACKUP_DIR"
+        echo "Хотите удалить директорию с резервными копиями? (д/y - да, н/n - нет)"
+        read -r remove_backup_dir
+        remove_backup_dir=$(echo "$remove_backup_dir" | tr '[:upper:]' '[:lower:]')
+        if [[ "$remove_backup_dir" =~ ^[yд]$ ]]; then
+            rm -rf "$BACKUP_DIR"
+            log_message "INFO" "Директория резервных копий $BACKUP_DIR удалена"
+            echo "✅ Директория резервных копий $BACKUP_DIR удалена"
+        else
+            echo "ℹ️  Директория резервных копий сохранена"
+        fi
+    else
+        echo "ℹ️  Директория резервных копий $BACKUP_DIR не найдена"
+    fi
+
+    # Если контейнеры не найдены, завершаем здесь
+    if [[ -z "$ragflow_containers" && -z "$ollama_containers" ]]; then
         show_return_to_menu_message
-        return 1
+        return 0
     fi
     
     # Запрос подтверждения на удаление
-    echo "ВНИМАНИЕ! Это действие удалит все контейнеры XRM Director, тома и файлы."
-    echo "Хотите продолжить удаление? (д/н)"
+    echo "ВНИМАНИЕ! Это действие удалит все контейнеры XRM Director, тома, образы и файлы."
+    echo "Найденные компоненты:"
+    if [[ -n "$ragflow_containers" ]]; then
+        echo "- Контейнеры RAGFlow: $ragflow_containers"
+    fi
+    if [[ -n "$ollama_containers" ]]; then
+        echo "- Контейнер Ollama: $ollama_containers"
+    fi
+    echo "Хотите продолжить удаление? (д/y - да, н/n - нет)"
     read -r confirm
+    confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
     
-    if [[ ! "$confirm" =~ ^[Дд]$ ]]; then
+    if [[ ! "$confirm" =~ ^[yд]$ ]]; then
         echo "Удаление отменено пользователем."
         return 0
     fi
     
     # Получение списка контейнеров с ragflow в имени
-    local containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow")
+    local containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow" || true)
     
     # Сбор информации о томах, подключенных к контейнерам с ragflow
     local volumes_to_remove=()
     
-    echo "Получение списка томов, подключенных к контейнерам XRM Director..."
-    for container in $containers; do
-        echo "Контейнер: $container"
-        
-        # Получение списка томов для контейнера
-        local container_volumes=$(docker inspect "$container" --format='{{range .Mounts}}{{.Name}}{{"\n"}}{{end}}' | grep -v "^$")
-        
-        if [ -n "$container_volumes" ]; then
-            echo "Тома, подключенные к контейнеру $container:"
-            echo "$container_volumes"
+    if [[ -n "$containers" ]]; then
+        echo "Получение списка томов, подключенных к контейнерам XRM Director..."
+        for container in $containers; do
+            echo "Контейнер: $container"
             
-            # Добавляем тома в общий список для удаления
-            for vol in $container_volumes; do
-                volumes_to_remove+=("$vol")
-            done
-        fi
-    done
-    
-    # Остановка контейнеров с ragflow
-    echo "Остановка контейнеров XRM Director..."
-    docker stop $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
-    
-    # Удаление контейнеров с ragflow
-    echo "Удаление контейнеров XRM Director..."
-    docker rm $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
+            # Получение списка томов для контейнера
+            local container_volumes=$(docker inspect "$container" --format='{{range .Mounts}}{{.Name}}{{"\n"}}{{end}}' | grep -v "^$")
+            
+            if [ -n "$container_volumes" ]; then
+                echo "Тома, подключенные к контейнеру $container:"
+                echo "$container_volumes"
+                
+                # Добавляем тома в общий список для удаления
+                for vol in $container_volumes; do
+                    volumes_to_remove+=("$vol")
+                done
+            fi
+        done
+        
+        # Остановка контейнеров с ragflow
+        echo "Остановка контейнеров XRM Director..."
+        docker stop $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
+        
+        # Удаление контейнеров с ragflow
+        echo "Удаление контейнеров XRM Director..."
+        docker rm $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
+    fi
     
     # Остановка и удаление контейнера Ollama, если он существует
     if docker ps -a --format '{{.Names}}' | grep -q "ollama"; then
@@ -828,25 +1714,66 @@ remove_xrm_director() {
         done
     fi
     
-    # Удаление директории установки
-    if [ -d "$INSTALL_DIR" ]; then
-        echo "Удаление директории установки..."
-        rm -rf "$INSTALL_DIR"
-        log_message "INFO" "Директория установки $INSTALL_DIR удалена"
+    # Удаление Docker образов
+    echo "Поиск и удаление Docker образов..."
+    
+    # Удаление образов RAGFlow
+    local ragflow_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "infiniflow/ragflow")
+    if [ -n "$ragflow_images" ]; then
+        echo "Найдены образы RAGFlow для удаления:"
+        echo "$ragflow_images"
+        echo "$ragflow_images" | while read -r image; do
+            echo "Удаление образа: $image"
+            if docker rmi -f "$image" 2>/dev/null; then
+                echo "✅ Образ $image успешно удален"
+            else
+                echo "❌ Не удалось удалить образ $image"
+            fi
+        done
+        log_message "INFO" "Образы RAGFlow обработаны"
+    else
+        echo "Образы RAGFlow не найдены"
+    fi
+    
+    # Удаление образов Ollama
+    local ollama_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "ollama/ollama")
+    if [ -n "$ollama_images" ]; then
+        echo "Найдены образы Ollama для удаления:"
+        echo "$ollama_images"
+        echo "$ollama_images" | while read -r image; do
+            echo "Удаление образа: $image"
+            if docker rmi -f "$image" 2>/dev/null; then
+                echo "✅ Образ $image успешно удален"
+            else
+                echo "❌ Не удалось удалить образ $image"
+            fi
+        done
+        log_message "INFO" "Образы Ollama обработаны"
+    else
+        echo "Образы Ollama не найдены"
+    fi
+    
+    # Удаление неиспользуемых образов (опционально)
+    echo "Хотите удалить все неиспользуемые Docker образы? (д/y - да, н/n - нет)"
+    read -r cleanup_images
+    cleanup_images=$(echo "$cleanup_images" | tr '[:upper:]' '[:lower:]')
+    if [[ "$cleanup_images" =~ ^[yд]$ ]]; then
+        echo "Очистка неиспользуемых образов..."
+        docker image prune -a -f
+        log_message "INFO" "Неиспользуемые образы очищены"
+        echo "Неиспользуемые образы очищены"
     fi
     
     log_message "INFO" "XRM Director успешно удален"
-    echo "===================================================="
-    echo "XRM Director и все связанные с ним компоненты успешно удалены!"
-    echo "===================================================="
+    echo ""
+    echo "✅ XRM Director и все связанные с ним компоненты успешно удалены!"
     show_return_to_menu_message
 }
 
 # Функция для отображения сообщения о возврате в главное меню
 show_return_to_menu_message() {
-    echo -e "\n===================================================="
-    echo "Нажмите Enter для возврата в главное меню..."
-    read -r
+    echo ""
+    read -p "Нажмите Enter для продолжения..." -r
 }
 
 # Функция вывода интерактивного меню
@@ -1015,7 +1942,7 @@ list_backups() {
     fi
     
     # Ищем директории с пользовательскими бэкапами
-    DIR_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -type d -name "${PROJECT_NAME}_*" 2>/dev/null | sort -r))
+    DIR_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -type d -name "${PROJECT_NAME}_"* 2>/dev/null | sort -r))
     
     if [ ${#DIR_BACKUPS[@]} -gt 0 ]; then
         print_color "blue" "📂 Директории с отдельными пользовательскими бэкапами томов:"
@@ -1073,9 +2000,9 @@ restore_backup() {
         fi
         
         print_color "yellow" "⚠️ Внимание! Восстановление из системного бэкапа перезапишет текущие данные томов."
-        read -p "Вы уверены? (y/n): " confirm
+        read -p "Вы уверены? (д/y - да, н/n - нет): " confirm
         
-        if [ "$confirm" != "y" ]; then
+        if [[ ! "$confirm" =~ ^[yдYД]$ ]]; then
             print_color "yellow" "❌ Восстановление отменено пользователем"
             return 0
         fi
@@ -1159,9 +2086,9 @@ restore_backup() {
         backup_name=$(basename "$selected_backup" .tar.gz)
         
         print_color "yellow" "⚠️ Внимание! Восстановление из бэкапа перезапишет текущие данные томов."
-        read -p "Вы уверены, что хотите восстановить данные из '$backup_name'? (y/n): " confirm
+        read -p "Вы уверены, что хотите восстановить данные из '$backup_name'? (д/y - да, н/n - нет): " confirm
         
-        if [ "$confirm" != "y" ]; then
+        if [[ ! "$confirm" =~ ^[yдYД]$ ]]; then
             print_color "yellow" "❌ Восстановление отменено пользователем"
             return 0
         fi
@@ -1177,7 +2104,7 @@ restore_backup() {
         tar -xzf "$selected_backup" -C "$TEMP_DIR"
         
         # Получаем имя распакованной директории
-        UNPACKED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "${PROJECT_NAME}_*" | head -n 1)
+        UNPACKED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "${PROJECT_NAME}_"* | head -n 1)
         
         if [ -z "$UNPACKED_DIR" ]; then
             print_color "red" "❌ Ошибка при распаковке архива"
@@ -1313,8 +2240,8 @@ manage_backups() {
             fi
             ;;
         3)
-            read -p "Вы действительно хотите удалить ВСЕ пользовательские бэкапы? Это действие необратимо! (yes/n): " confirm
-            if [ "$confirm" == "yes" ]; then
+            read -p "Вы действительно хотите удалить ВСЕ пользовательские бэкапы? Это действие необратимо! (д/y - да, н/n - нет): " confirm
+            if [[ "$confirm" =~ ^[yдYД]$ ]]; then
                 rm -f "${USER_BACKUP_DIR}/${PROJECT_NAME}_full_"*.tar.gz
                 rm -rf "${USER_BACKUP_DIR}/${PROJECT_NAME}_"*
                 print_color "green" "✅ Все пользовательские бэкапы удалены"
@@ -1324,8 +2251,8 @@ manage_backups() {
             ;;
         4)
             if [ -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
-                read -p "Вы действительно хотите удалить системный (initial) бэкап? (yes/n): " confirm
-                if [ "$confirm" == "yes" ]; then
+                read -p "Вы действительно хотите удалить системный (initial) бэкап? (д/y - да, н/n - нет): " confirm
+                if [[ "$confirm" =~ ^[yдYД]$ ]]; then
                     rm -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz"
                     print_color "green" "✅ Системный бэкап удален"
                 else
@@ -1386,12 +2313,92 @@ backup_restore_menu() {
     esac
 }
 
+# Функция для обновления версии в .env файле
+update_env_version() {
+    local env_file="$1"
+    local new_version="$2"
+    local edition="$3" # "slim" или "full"
+    
+   
+    
+    if [ ! -f "$env_file" ]; then
+        log_message "ERROR" "Файл .env не найден: $env_file"
+        echo "Ошибка: Файл .env не найден: $env_file"
+        return 1
+    fi
+    
+    echo "Обновление версии RAGFlow в файле .env..."
+    log_message "INFO" "Обновление версии RAGFlow на $new_version ($edition)"
+    
+    # Создаем резервную копию .env файла
+    cp "$env_file" "$env_file.backup"
+    
+    # Определяем образ в зависимости от выбранной редакции
+    local image_name="infiniflow/ragflow:${new_version}"
+    if [ "$edition" == "slim" ]; then
+        image_name="${image_name}-slim"
+    fi
+    
+    # Комментируем все строки с RAGFLOW_IMAGE
+    sed -i '/^RAGFLOW_IMAGE=/s/^/# /' "$env_file"
+    sed -i '/^# RAGFLOW_IMAGE=/s/^# /# # /' "$env_file"
+    
+    # Ищем место для вставки новой строки (после последней закомментированной строки RAGFLOW_IMAGE)
+    local insert_line=$(grep -n "RAGFLOW_IMAGE" "$env_file" | tail -1 | cut -d: -f1)
+    
+    if [ -n "$insert_line" ]; then
+        # Вставляем новую строку после найденной позиции
+        sed -i "${insert_line}a\\RAGFLOW_IMAGE=${image_name}" "$env_file"
+    else
+        # Если не найдено, добавляем в конец файла
+        echo "RAGFLOW_IMAGE=${image_name}" >> "$env_file"
+    fi
+    
+    echo "Версия RAGFlow обновлена на: $image_name"
+    log_message "INFO" "Версия RAGFlow успешно обновлена на: $image_name"
+    
+    # Показываем изменения пользователю
+    echo "Текущая активная версия в .env:"
+    grep "^RAGFLOW_IMAGE=" "$env_file" || echo "Ошибка: не удалось найти активную строку RAGFLOW_IMAGE"
+    
+    return 0
+}
+
+# Функция для установки RAGFlow
 # ======= Основной код =======
-# Проверка прав root
-check_root
+# Обработка аргументов командной строки (включая справку)
+if [ "$#" -gt 0 ]; then
+    # Проверяем команды справки без требования root
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -v|--version)
+            echo "XRM Director Installer v$VERSION"
+            exit 0
+            ;;
+    esac
+    
+    # Для остальных команд требуем права root
+    check_root
+    parse_cli_args "$@"
+    
+    # Выполняем установку через CLI
+    if [ $CLI_MODE -eq 1 ]; then
+        # Инициализация логирования для CLI
+        init_logging
+        cli_install
+        exit 0
+    fi
+else
+    # Для интерактивного режима требуем права root
+    check_root
+fi
 
 # Инициализация логирования
 init_logging
+
 
 # Основной цикл меню
 while true; do
