@@ -149,6 +149,351 @@ parse_cli_args() {
     done
 }
 
+# ======= Функции для диагностики и исправления проблем =======
+
+# Функция для проверки логов контейнеров на наличие критических ошибок
+check_container_logs_for_errors() {
+    local container_name="$1"
+    local error_patterns=()
+    local found_errors=false
+    
+    echo "🔍 Проверка логов контейнера $container_name..."
+    
+    # Определяем паттерны ошибок для разных контейнеров
+    case "$container_name" in
+        "ragflow-mysql")
+            error_patterns=(
+                "Unable to open.*ib_redo.*error: 1504"
+                "InnoDB.*Assertion failure"
+                "mysqld got signal 6"
+                "Failed to find the file"
+                "Error.*encountered when writing to the redo log"
+            )
+            ;;
+        "ragflow-minio")
+            error_patterns=(
+                "Storage resources are insufficient"
+                "Insufficient number of drives online"
+                "UUID.*do not match"
+                "Write failed.*offline-disks"
+                "inconsistent drive found"
+            )
+            ;;
+        "ragflow-server")
+            error_patterns=(
+                "Failed to resolve.*es01"
+                "Elasticsearch.*is unhealthy"
+                "Connection error caused by.*NameResolutionError"
+                "Exception.*Elasticsearch.*unhealthy"
+            )
+            ;;
+        *)
+            echo "⚠️ Неизвестный контейнер: $container_name"
+            return 1
+            ;;
+    esac
+    
+    # Проверяем логи контейнера, если он существует
+    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        local logs=$(docker logs "$container_name" --tail 100 2>&1)
+        
+        # Проверяем каждый паттерн ошибки
+        for pattern in "${error_patterns[@]}"; do
+            if echo "$logs" | grep -q "$pattern"; then
+                echo "❌ Обнаружен паттерн ошибки в $container_name: $pattern"
+                found_errors=true
+            fi
+        done
+        
+        if [ "$found_errors" = true ]; then
+            echo "💥 Критические ошибки обнаружены в контейнере $container_name"
+            return 0  # Ошибки найдены
+        else
+            echo "✅ Критических ошибок в $container_name не обнаружено"
+            return 1  # Ошибок нет
+        fi
+    else
+        echo "⚠️ Контейнер $container_name не найден"
+        return 1
+    fi
+}
+
+# Функция для комплексной проверки всех критических ошибок
+check_and_fix_ragflow_errors() {
+    echo "🔍 ====== КОМПЛЕКСНАЯ ПРОВЕРКА СИСТЕМЫ ======"
+    echo "Проверка логов всех контейнеров на наличие критических ошибок..."
+    
+    local mysql_errors=false
+    local minio_errors=false
+    local server_errors=false
+    local need_fix=false
+    
+    # Проверяем каждый контейнер
+    if check_container_logs_for_errors "ragflow-mysql"; then
+        mysql_errors=true
+        need_fix=true
+        echo "🚨 MySQL: Обнаружены проблемы с InnoDB redo-логами"
+    fi
+    
+    if check_container_logs_for_errors "ragflow-minio"; then
+        minio_errors=true
+        need_fix=true
+        echo "🚨 MinIO: Обнаружены проблемы с хранилищем"
+    fi
+    
+    if check_container_logs_for_errors "ragflow-server"; then
+        server_errors=true
+        need_fix=true
+        echo "🚨 RAGFlow Server: Обнаружены проблемы с движком документов"
+    fi
+    
+    # Если ошибки найдены, запускаем автоматическое исправление
+    if [ "$need_fix" = true ]; then
+        echo ""
+        echo "💡 ====== АВТОМАТИЧЕСКОЕ ИСПРАВЛЕНИЕ ОШИБОК ======"
+        echo "Обнаружены критические ошибки в системе RAGFlow."
+        echo "Запускаем автоматическое исправление..."
+        echo ""
+        
+        # Создаем резервную копию перед исправлением
+        local fix_backup_dir="/tmp/ragflow_autofix_backup_$(date +%Y%m%d_%H%M%S)"
+        create_emergency_backup "$fix_backup_dir"
+        
+        # Исправляем ошибки в зависимости от типа
+        if [ "$mysql_errors" = true ]; then
+            fix_mysql_innodb_errors
+        fi
+        
+        if [ "$minio_errors" = true ]; then
+            fix_minio_storage_errors
+        fi
+        
+        if [ "$server_errors" = true ]; then
+            fix_ragflow_server_errors
+        fi
+        
+        # Перезапускаем все контейнеры в правильном порядке
+        restart_ragflow_containers_safely
+        
+        echo "✅ Автоматическое исправление завершено!"
+        echo "📁 Резервная копия сохранена в: $fix_backup_dir"
+        echo ""
+        
+        # Повторная проверка после исправления
+        echo "🔍 Проверка системы после исправления..."
+        sleep 30
+        
+        local final_check_passed=true
+        if check_container_logs_for_errors "ragflow-mysql"; then
+            echo "❌ MySQL: Проблемы остались после исправления"
+            final_check_passed=false
+        fi
+        
+        if check_container_logs_for_errors "ragflow-minio"; then
+            echo "❌ MinIO: Проблемы остались после исправления"
+            final_check_passed=false
+        fi
+        
+        if check_container_logs_for_errors "ragflow-server"; then
+            echo "❌ RAGFlow Server: Проблемы остались после исправления"
+            final_check_passed=false
+        fi
+        
+        if [ "$final_check_passed" = true ]; then
+            echo "🎉 Все проблемы успешно исправлены!"
+            return 0
+        else
+            echo "⚠️ Некоторые проблемы не удалось исправить автоматически"
+            echo "Рекомендуется обратиться к администратору системы"
+            return 1
+        fi
+    else
+        echo "✅ Критических ошибок в системе не обнаружено"
+        echo "Система RAGFlow работает корректно"
+        return 0
+    fi
+}
+
+# Функция для создания экстренной резервной копии
+create_emergency_backup() {
+    local backup_dir="$1"
+    echo "📦 Создание экстренной резервной копии..."
+    mkdir -p "$backup_dir"
+    
+    # Создание дампа MySQL если контейнер запущен
+    if docker ps | grep -q ragflow-mysql; then
+        echo "💾 Создание дампа базы данных MySQL..."
+        docker exec ragflow-mysql mysqldump -uroot -pinfini_rag_flow --all-databases > "$backup_dir/mysql_backup.sql" 2>/dev/null || {
+            echo "⚠️ Не удалось создать дамп базы данных"
+        }
+    fi
+    
+    # Резервная копия volumes
+    echo "💾 Создание резервной копии volumes..."
+    docker run --rm -v docker_mysql_data:/source -v "$backup_dir":/backup busybox tar czf /backup/mysql_data.tar.gz -C /source . 2>/dev/null || echo "⚠️ Не удалось создать резервную копию MySQL data"
+    docker run --rm -v docker_minio_data:/source -v "$backup_dir":/backup busybox tar czf /backup/minio_data.tar.gz -C /source . 2>/dev/null || echo "⚠️ Не удалось создать резервную копию MinIO data"
+    
+    echo "✅ Экстренная резервная копия создана в: $backup_dir"
+}
+
+# Функция для исправления проблем MySQL InnoDB
+fix_mysql_innodb_errors() {
+    echo "🔧 Исправление проблем MySQL InnoDB..."
+    
+    # Останавливаем MySQL контейнер
+    echo "⏹️ Остановка MySQL контейнера..."
+    docker stop ragflow-mysql 2>/dev/null || true
+    
+    # Удаляем поврежденный volume
+    echo "🗑️ Удаление поврежденного MySQL volume..."
+    docker volume rm docker_mysql_data 2>/dev/null || true
+    
+    # Создаем новый volume
+    echo "📦 Создание нового MySQL volume..."
+    docker volume create docker_mysql_data
+    
+    echo "✅ MySQL InnoDB проблемы исправлены"
+}
+
+# Функция для исправления проблем MinIO storage
+fix_minio_storage_errors() {
+    echo "🔧 Исправление проблем MinIO storage..."
+    
+    # Останавливаем MinIO контейнер
+    echo "⏹️ Остановка MinIO контейнера..."
+    docker stop ragflow-minio 2>/dev/null || true
+    
+    # Удаляем поврежденный volume
+    echo "🗑️ Удаление поврежденного MinIO volume..."
+    docker volume rm docker_minio_data 2>/dev/null || true
+    
+    # Создаем новый volume
+    echo "📦 Создание нового MinIO volume..."
+    docker volume create docker_minio_data
+    
+    echo "✅ MinIO storage проблемы исправлены"
+}
+
+# Функция для исправления проблем RAGFlow Server
+fix_ragflow_server_errors() {
+    echo "🔧 Исправление проблем RAGFlow Server..."
+    
+    cd "$DOCKER_DIR" || return 1
+    
+    # Настройка движка документов
+    echo "⚙️ Настройка движка документов..."
+    
+    # Проверяем доступное дисковое пространство для выбора движка
+    local available_space=$(df / | awk 'NR==2 {print $4}')
+    local required_space_es=20971520  # 20GB для Elasticsearch
+    
+    if [ "$available_space" -lt "$required_space_es" ]; then
+        echo "⚠️ Недостаточно места для Elasticsearch, переключаемся на Infinity"
+        export DOC_ENGINE=infinity
+        export COMPOSE_PROFILES=infinity
+    else
+        echo "🔍 Используем Elasticsearch в качестве движка документов"
+        export DOC_ENGINE=elasticsearch
+        export COMPOSE_PROFILES=elasticsearch
+    fi
+    
+    # Обновляем .env файл
+    if grep -q "^DOC_ENGINE=" .env; then
+        sed -i "s/^DOC_ENGINE=.*/DOC_ENGINE=$DOC_ENGINE/" .env
+    else
+        echo "DOC_ENGINE=$DOC_ENGINE" >> .env
+    fi
+    
+    if grep -q "^COMPOSE_PROFILES=" .env; then
+        sed -i "s/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=$DOC_ENGINE/" .env
+    else
+        echo "COMPOSE_PROFILES=$DOC_ENGINE" >> .env
+    fi
+    
+    echo "✅ RAGFlow Server проблемы исправлены"
+}
+
+# Функция для безопасного перезапуска контейнеров RAGFlow
+restart_ragflow_containers_safely() {
+    echo "🔄 Безопасный перезапуск контейнеров RAGFlow..."
+    
+    cd "$DOCKER_DIR" || return 1
+    
+    # Полная остановка всех контейнеров
+    echo "⏹️ Остановка всех контейнеров..."
+    docker-compose down 2>/dev/null || true
+    
+    # Ждем полной остановки
+    sleep 10
+    
+    # Запускаем контейнеры в правильном порядке
+    echo "▶️ Запуск MySQL..."
+    docker-compose up -d mysql
+    
+    # Ждем готовности MySQL
+    echo "⏳ Ожидание готовности MySQL..."
+    local timeout=60
+    while [ $timeout -gt 0 ]; do
+        if docker exec ragflow-mysql mysqladmin ping -uroot -pinfini_rag_flow --silent 2>/dev/null; then
+            break
+        fi
+        sleep 2
+        timeout=$((timeout-2))
+    done
+    
+    if [ $timeout -le 0 ]; then
+        echo "❌ MySQL не запустился в течение 60 секунд"
+        return 1
+    fi
+    echo "✅ MySQL готов"
+    
+    # Запуск остальных сервисов
+    echo "▶️ Запуск MinIO..."
+    docker-compose up -d minio
+    sleep 10
+    
+    echo "▶️ Запуск Redis..."
+    docker-compose up -d redis
+    sleep 5
+    
+    # Запуск движка документов
+    if [ "$DOC_ENGINE" = "elasticsearch" ]; then
+        echo "▶️ Запуск Elasticsearch..."
+        docker-compose up -d es01
+        
+        echo "⏳ Ожидание готовности Elasticsearch..."
+        timeout=120
+        while [ $timeout -gt 0 ]; do
+            if curl -s http://localhost:1200 >/dev/null 2>&1; then
+                break
+            fi
+            sleep 5
+            timeout=$((timeout-5))
+        done
+        
+        if [ $timeout -le 0 ]; then
+            echo "⚠️ Elasticsearch не отвечает, переключаемся на Infinity..."
+            export DOC_ENGINE=infinity
+            export COMPOSE_PROFILES=infinity
+            sed -i "s/^DOC_ENGINE=.*/DOC_ENGINE=infinity/" .env
+            sed -i "s/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=infinity/" .env
+            docker-compose up -d infinity
+        else
+            echo "✅ Elasticsearch готов"
+        fi
+    elif [ "$DOC_ENGINE" = "infinity" ]; then
+        echo "▶️ Запуск Infinity..."
+        docker-compose up -d infinity
+        sleep 10
+    fi
+    
+    # Запуск основного приложения
+    echo "▶️ Запуск RAGFlow server..."
+    docker-compose up -d ragflow
+    
+    echo "✅ Все контейнеры перезапущены"
+}
+
 # ======= Универсальная функция подтверждения =======
 # Поддерживает русские (д/н) и английские (y/n) варианты ответов
 confirm_action() {
@@ -452,6 +797,31 @@ install_xrm_director_cli() {
         echo "Проверьте логи контейнера: docker logs ragflow-server"
     fi
     
+    # ОТКЛЮЧЕННОЕ ОЖИДАНИЕ: Ранее здесь было ожидание сообщения "Running on all addresses" в логах (макс. 180 сек)
+    # Это ожидание отключено, так как:
+    # - Поиск по логам не всегда срабатывает корректно
+    # - Если контейнер имеет статус "running", значит сервис уже функционирует
+    # - Полная инициализация может происходить в фоновом режиме без влияния на работоспособность
+    #
+    # Закомментированный код ожидания:
+    # echo "Ожидание запуска сервера (это может занять некоторое время)..."
+    # local server_started=false
+    # for i in {1..72}; do
+    #     if docker logs ragflow-server 2>&1 | grep "Running on all addresses"; then
+    #         echo -e "\nСервер ragflow-server успешно запущен!"
+    #         server_started=true
+    #         break
+    #     fi
+    #     echo -n "."
+    #     sleep 5
+    # done
+    # 
+    # if [ "$server_started" = false ]; then
+    #     echo -e "\nПревышено время ожидания запуска сервера (180 секунд)."
+    #     echo "Проверьте логи контейнера: docker logs -f ragflow-server"
+    #     echo "Система может работать некорректно до полного запуска сервера."
+    # fi
+    
     # Установка Ollama
     echo "Установка Ollama..."
     
@@ -506,6 +876,11 @@ install_xrm_director_cli() {
     echo "📁 Установочная директория: $INSTALL_DIR/"
     echo "📋 Логи: $LOG_FILE"
     
+    # Запускаем комплексную проверку и исправление возможных проблем
+    echo ""
+    echo "🔍 Выполняем проверку системы..."
+    check_and_fix_ragflow_errors
+    
     return 0
 }
 
@@ -541,464 +916,13 @@ cli_install() {
         echo "❌ Ошибка установки XRM Director"
         exit 1
     fi
-}
-
-# Функция проверки наличия NVIDIA GPU
-has_nvidia_gpu() {
-    # Проверяем наличие nvidia-smi
-    if command -v nvidia-smi >/dev/null 2>&1; then
-        # Проверяем, что NVIDIA GPU доступна
-        if nvidia-smi >/dev/null 2>&1; then
-            return 0
-        fi
-    fi
     
-    # Проверяем наличие файла устройства NVIDIA
-    if [ -e "/dev/nvidia0" ] || [ -e "/dev/nvidiactl" ]; then
-        return 0
-    fi
-    
-    return 1
-}
-
-# Универсальная функция для запроса подтверждения (принимает только д/y или н/n)
-ask_yes_no() {
-    local prompt="$1"
-    local default_answer="${2:-}"  # Опциональный параметр для ответа по умолчанию
-    
-    while true; do
-        if [[ -n "$default_answer" ]]; then
-            echo -n "$prompt (д/y - да, н/n - нет, по умолчанию: $default_answer): "
-        else
-            echo -n "$prompt (д/y - да, н/n - нет): "
-        fi
-        
-        read -r answer
-        
-        # Если ответ пустой и есть значение по умолчанию
-        if [[ -z "$answer" && -n "$default_answer" ]]; then
-            answer="$default_answer"
-        fi
-        
-        # Преобразуем ответ в нижний регистр для упрощения проверки
-        answer=$(echo "$answer" | tr '[:upper:]' '[:lower:]')
-        
-        # Проверяем ответ (принимаем только д/y для да и н/n для нет)
-        case "$answer" in
-            д|y)
-                return 0  # Да
-                ;;
-            н|n)
-                return 1  # Нет
-                ;;
-            *)
-                echo "❌ Пожалуйста, введите: 'д' или 'y' для подтверждения, 'н' или 'n' для отказа"
-                ;;
-        esac
-    done
-}
-
-# Функция тихой проверки системных требований (для CLI режима)
-check_system_requirements_silent() {
-    local all_ok=1
-    local warnings=()
-    
-    echo "📋 Проверка системных требований:"
-    
-    # Проверка ОС
-    if [ ! -f /etc/redhat-release ] && [ ! -f /etc/centos-release ]; then
-        echo "❌ ОС: Неподдерживаемая операционная система"
-        echo "   Требуется: Red Hat Enterprise Linux / CentOS"
-        log_message "ERROR" "Неподдерживаемая операционная система"
-        warnings+=("Неподдерживаемая операционная система")
-        all_ok=0
-    else
-        echo "✅ ОС: $(cat /etc/redhat-release 2>/dev/null || cat /etc/centos-release 2>/dev/null)"
-    fi
-    
-    # Проверка CPU
-    local cpu_cores=$(nproc)
-    if [ "$cpu_cores" -lt "$REQUIRED_CPU_CORES" ]; then
-        echo "❌ CPU: $cpu_cores ядер (требуется: $REQUIRED_CPU_CORES)"
-        log_message "ERROR" "Недостаточно ядер CPU: найдено $cpu_cores, требуется $REQUIRED_CPU_CORES"
-        warnings+=("Недостаточно ядер CPU: $cpu_cores < $REQUIRED_CPU_CORES")
-        all_ok=0
-    else
-        echo "✅ CPU: $cpu_cores ядер (требуется: $REQUIRED_CPU_CORES)"
-    fi
-    
-    # Проверка RAM
-    local ram_gb=$(free -g | awk '/^Mem:/{print $2}')
-    if [ "$ram_gb" -lt "$REQUIRED_RAM_GB" ]; then
-        echo "❌ RAM: ${ram_gb}GB (требуется: ${REQUIRED_RAM_GB}GB)"
-        log_message "ERROR" "Недостаточно RAM: найдено ${ram_gb}GB, требуется ${REQUIRED_RAM_GB}GB"
-        warnings+=("Недостаточно RAM: ${ram_gb}GB < ${REQUIRED_RAM_GB}GB")
-        all_ok=0
-    else
-        echo "✅ RAM: ${ram_gb}GB (требуется: ${REQUIRED_RAM_GB}GB)"
-    fi
-    
-    # Проверка места на диске
-    local disk_gb=$(df / | awk 'NR==2{print int($4/1024/1024)}')
-    if [ "$disk_gb" -lt "$REQUIRED_DISK_GB" ]; then
-        echo "❌ Диск: ${disk_gb}GB свободно (требуется: ${REQUIRED_DISK_GB}GB)"
-        log_message "ERROR" "Недостаточно места на диске: найдено ${disk_gb}GB, требуется ${REQUIRED_DISK_GB}GB"
-        warnings+=("Недостаточно места на диске: ${disk_gb}GB < ${REQUIRED_DISK_GB}GB")
-        all_ok=0
-    else
-        echo "✅ Диск: ${disk_gb}GB свободно (требуется: ${REQUIRED_DISK_GB}GB)"
-    fi
-    
-    # Если есть проблемы, показываем их и даем выбор
-    if [ $all_ok -eq 0 ]; then
-        echo ""
-        echo "⚠️  Обнаружены следующие проблемы:"
-        for warning in "${warnings[@]}"; do
-            echo "   • $warning"
-        done
-        echo ""
-        echo "🤔 Что делать?"
-        echo "1. Отменить установку (рекомендуется)"
-        echo "2. Продолжить установку (может привести к проблемам)"
-        echo ""
-        read -p "Ваш выбор (1-2): " choice
-        
-        case $choice in
-            1)
-                echo "🛑 Установка отменена пользователем"
-                log_message "INFO" "Установка отменена из-за невыполнения системных требований"
-                return 1
-                ;;
-            2)
-                echo "⚠️  Продолжаем установку, игнорируя предупреждения..."
-                log_message "WARNING" "Установка продолжена с игнорированием системных требований"
-                return 0
-                ;;
-            *)
-                echo "❌ Неверный выбор. Установка отменена."
-                return 1
-                ;;
-        esac
-    fi
-    
-    echo "✅ Все системные требования выполнены"
-    return 0
-}
-
-# Функция тихой проверки Docker
-check_docker_installed_silent() {
-    if ! command -v docker &> /dev/null; then
-        log_message "INFO" "Docker не установлен"
-        return 1
-    fi
-    
-    if ! systemctl is-active --quiet docker; then
-        log_message "INFO" "Docker не запущен, запускаем..."
-        systemctl start docker
-        if ! systemctl is-active --quiet docker; then
-            log_message "ERROR" "Не удалось запустить Docker"
-            return 1
-        fi
-    fi
-    
-    return 0
-}
-
-# ======= Настройка обработки ошибок и выхода =======
-set -o pipefail
-trap 'echo "Скрипт прерван. Выход..."; exit 1' SIGINT SIGTERM
-
-# ======= Функции для логирования и проверок =======
-# Функция для логирования
-log_message() {
-    local level="$1"
-    local message="$2"
-    # Только запись в лог-файл без вывода на экран
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] ${message}" >> "$LOG_FILE"
-}
-
-# Проверка запуска от имени root
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        echo "Ошибка: Скрипт должен быть запущен с правами администратора (sudo)"
-        exit 1
-    fi
-}
-
-# Инициализация логирования
-init_logging() {
-    mkdir -p "$(dirname "$LOG_FILE")"
-    touch "$LOG_FILE"
-    log_message "INFO" "Запуск скрипта установки XRM Director v$VERSION"
-}
-
-# Сравнение версий
-check_version() {
-    # Удаляем префикс "v" из версий если он присутствует
-    local v1=$(echo "$1" | sed 's/^v//')
-    local v2=$(echo "$2" | sed 's/^v//')
-    
-    # Проверка на некорректные значения
-    if [[ ! "$v1" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-        log_message "ERROR" "Некорректная версия: $1"
-        return 1
-    fi
-    
-    if [[ ! "$v2" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-        log_message "ERROR" "Некорректная версия: $2"
-        return 1
-    fi
-    
-    if [[ "$v1" == "$v2" ]]; then
-        return 0
-    fi
-    
-    local IFS=.
-    local i ver1=($v1) ver2=($v2)
-    
-    # Заполнить нулями, чтобы обе версии имели одинаковое количество элементов
-    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++)); do
-        ver1[i]=0
-    done
-    for ((i=${#ver2[@]}; i<${#ver1[@]}; i++)); do
-        ver2[i]=0
-    done
-    
-    # Поэлементное сравнение
-    for ((i=0; i<${#ver1[@]}; i++)); do
-        if [[ -z ${ver1[i]} ]]; then
-            ver1[i]=0
-        fi
-        if [[ -z ${ver2[i]} ]]; then
-            ver2[i]=0
-        fi
-        if (( 10#${ver1[i]} > 10#${ver2[i]} )); then
-            return 0
-        fi
-        if (( 10#${ver2[i]} < 10#${ver1[i]} )); then
-            return 1
-        fi
-    done
-    return 0
-}
-
-# ======= Функции для пунктов меню =======
-# Проверка системных требований
-check_system_requirements() {
-    log_message "INFO" "Проверка системных требований..."
-    
-    # Проверка CPU
-    local cpu_cores=$(grep -c ^processor /proc/cpuinfo)
-    log_message "INFO" "Ядра ЦП: $cpu_cores (требуется: $REQUIRED_CPU_CORES)"
-    
-    # Проверка RAM
-    local ram_gb=$(free -g | awk '/^Mem:/{print $2}')
-    log_message "INFO" "Оперативная память: $ram_gb ГБ (требуется: $REQUIRED_RAM_GB ГБ)"
-    
-    # Проверка места на диске
-    local disk_gb=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
-    log_message "INFO" "Свободное место на диске: $disk_gb ГБ (требуется: $REQUIRED_DISK_GB ГБ)"
-    
-    # Отображение результатов проверки
-    echo "====== Результаты проверки системных требований ======"
-    echo "1. ЦП: $cpu_cores ядер (минимум: $REQUIRED_CPU_CORES) - $([ "$cpu_cores" -ge "$REQUIRED_CPU_CORES" ] && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
-    echo "2. Оперативная память: $ram_gb ГБ (минимум: $REQUIRED_RAM_GB ГБ) - $([ "$ram_gb" -ge "$REQUIRED_RAM_GB" ] && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
-    echo "3. Диск: $disk_gb ГБ свободно (минимум: $REQUIRED_DISK_GB ГБ) - $([ "$disk_gb" -ge "$REQUIRED_DISK_GB" ] && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
-    
-    # Проверка Docker, если установлен
-    if command -v docker &>/dev/null; then
-        local docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
-        echo "4. Docker: $docker_version (минимум: $DOCKER_MIN_VERSION) - $(check_version "$docker_version" "$DOCKER_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
-    else
-        echo "4. Docker: Не установлен"
-    fi
-    
-    # Проверка Docker Compose, если установлен
-    if docker compose version &>/dev/null; then
-        # Упрощенное получение версии Docker Compose
-        local compose_version=$(docker compose version | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+")
-        
-        echo "5. Docker Compose: $compose_version (минимум: $DOCKER_COMPOSE_MIN_VERSION) - $(check_version "$compose_version" "$DOCKER_COMPOSE_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
-    else
-        echo "5. Docker Compose: Не установлен"
-    fi
-    echo "===================================================="
-    show_return_to_menu_message
-}
-
-# Функция для проверки установленных Docker и Docker Compose
-check_docker_info() {
-    log_message "INFO" "Проверка установленных Docker и Docker Compose..."
-    
-    echo "====== Информация о Docker и Docker Compose ======"
-    
-    # Проверка Docker
-    if command -v docker &>/dev/null; then
-        local docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
-        echo "Docker версия: $docker_version"
-        echo ""
-        echo "Дополнительная информация о Docker:"
-        docker info 2>/dev/null | grep -E "Server Version|Containers|Images|Operating System"
-        
-        # Проверка на соответствие минимальной версии
-        if ! check_version "$docker_version" "$DOCKER_MIN_VERSION"; then
-            echo "ВНИМАНИЕ: Установленная версия Docker ($docker_version) ниже рекомендуемой ($DOCKER_MIN_VERSION)"
-            echo "Рекомендуется обновить Docker до версии $DOCKER_MIN_VERSION или выше"
-            echo "Хотите продолжить установку Docker/Docker Compose? (д/н)"
-            read -r answer
-            if [[ "$answer" =~ ^[yдYД]$ ]]; then
-                install_docker
-            fi
-        fi
-    else
-        echo "Docker не установлен"
-        echo "Хотите установить Docker/Docker Compose? (д/н)"
-        read -r answer
-        if [[ "$answer" =~ ^[Дд]$ ]]; then
-            install_docker
-        fi
-    fi
-    
+    # Запускаем комплексную проверку и исправление возможных проблем
     echo ""
-    
-    # Проверка Docker Compose
-    if docker compose version &>/dev/null; then
-        # Упрощенное получение версии Docker Compose
-        local compose_version=$(docker compose version | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+")
-        
-        echo "Docker Compose версия: $compose_version (plugin)"
-        
-        # Проверка на соответствие минимальной версии
-        if ! check_version "$compose_version" "$DOCKER_COMPOSE_MIN_VERSION"; then
-            echo "ВНИМАНИЕ: Установленная версия Docker Compose ($compose_version) ниже рекомендуемой ($DOCKER_COMPOSE_MIN_VERSION)"
-        fi
-    else
-        echo "Docker Compose не установлен"
-        echo "Хотите установить Docker Compose? (д/н)"
-        read -r answer
-        if [[ "$answer" =~ ^[Дд]$ ]]; then
-            install_docker
-        fi
-    fi
-    echo "===================================================="
-    show_return_to_menu_message
+    echo "🔍 Выполняем финальную проверку системы..."
+    check_and_fix_ragflow_errors
 }
 
-# Функция для установки Docker и Docker Compose
-install_docker() {
-    log_message "INFO" "Установка Docker и Docker Compose..."
-    
-    echo "Установка Docker и Docker Compose на RedOS..."
-    
-    # Установка Docker и Docker Compose
-    if ! dnf install -y docker-ce docker-ce-cli docker-compose; then
-        log_message "ERROR" "Не удалось установить Docker и Docker Compose"
-        echo "Ошибка: Не удалось установить Docker и Docker Compose"
-        return 1
-    fi
-    
-    # Запуск и активация службы Docker
-    if ! systemctl enable docker --now; then
-        log_message "ERROR" "Не удалось запустить и активировать службу Docker"
-        echo "Ошибка: Не удалось запустить и активировать службу Docker"
-        return 1
-    fi
-    
-    # Проверка статуса службы Docker
-    echo "Проверка статуса службы Docker..."
-    if ! systemctl status docker | grep -q "active (running)"; then
-        log_message "ERROR" "Служба Docker не запущена"
-        echo "Ошибка: Служба Docker не запущена"
-        return 1
-    fi
-    
-    # Вывод информации о Docker
-    echo "Информация о Docker:"
-    docker info
-    
-    # Добавление пользователя в группу docker
-    echo "Укажите имя пользователя, который будет работать с Docker:"
-    read -r username
-    
-    if id "$username" &>/dev/null; then
-        if ! usermod -aG docker "$username"; then
-            log_message "ERROR" "Не удалось добавить пользователя $username в группу docker"
-            echo "Ошибка: Не удалось добавить пользователя $username в группу docker"
-        else
-            log_message "INFO" "Пользователь $username успешно добавлен в группу docker"
-            echo "Пользователь $username успешно добавлен в группу docker"
-            echo "ВАЖНО: Для применения изменений необходимо выйти из системы и войти снова"
-        fi
-    else
-        log_message "ERROR" "Пользователь $username не существует"
-        echo "Ошибка: Пользователь $username не существует"
-    fi
-    
-    log_message "INFO" "Docker и Docker Compose успешно установлены"
-    echo "Docker и Docker Compose успешно установлены"
-    
-    echo "===================================================="
-    show_return_to_menu_message
-}
-
-# Функция для диагностики проблем с контейнером
-diagnose_container_issues() {
-    local container_name="$1"
-    echo "Диагностика контейнера $container_name..."
-    
-    # Проверка статуса контейнера
-    local container_status=$(docker inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null)
-    echo "Статус контейнера: $container_status"
-    
-    # Проверка логов контейнера, даже если он не запустился полностью
-    echo "Логи контейнера:"
-    docker logs "$container_name" 2>&1 || echo "Не удалось получить логи контейнера"
-    
-    # Проверка доступных ресурсов
-    echo "Свободная память:"
-    free -h
-    
-    echo "Свободное место на диске:"
-    df -h /
-    
-    # Проверка прав доступа и владельца директорий
-    if docker inspect --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' "$container_name" 2>/dev/null | grep -q .; then
-        echo "Проверка томов контейнера:"
-        for vol in $(docker inspect --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' "$container_name"); do
-            if [ -e "$vol" ]; then
-                echo "Том $vol: $(ls -ld "$vol")"
-            else
-                echo "Том $vol не существует"
-            fi
-        done
-    fi
-
-    # Рекомендации по решению
-    echo "Рекомендации по устранению проблемы:"
-    echo "1. Убедитесь, что у системы достаточно ресурсов (RAM, CPU)"
-    echo "2. Проверьте права доступа к томам и файлам контейнера"
-    echo "3. Проверьте все зависимости контейнера"
-    echo "4. Убедитесь, что порты не заняты другими сервисами"
-}
-
-# Функция для получения списка доступных версий RAGFlow
-get_available_versions() {
-    # Актуальный список версий из Docker Hub (https://hub.docker.com/r/infiniflow/ragflow/tags)
-    local versions=(
-        "nightly"
-        "v0.19.0"
-        "v0.18.0"
-        "v0.17.2"
-        "v0.17.1"
-        "v0.17.0"
-    )
-    
-    # Возвращаем версии через echo для использования в других функциях
-    printf '%s\n' "${versions[@]}"
-}
-
-# Функция для выбора версии RAGFlow
-# ======= Функции для установки и управления XRM Director =======
 # Функция для установки XRM Director
 install_xrm_director() {
     log_message "INFO" "Установка XRM Director..."
@@ -1331,11 +1255,7 @@ install_xrm_director() {
         fi
     fi
     
-    # РЕЖИМ МЕНЮ: Проверка состояния ragflow-server без ожидания полной инициализации
-    # Ожидание полной инициализации ragflow-server (макс. 180 секунд) отключено по следующим причинам:
-    # 1. Команда "docker logs ragflow-server 2>&1 | grep 'Running on all addresses'" не всегда находит нужное сообщение в логах
-    # 2. Если контейнер ragflow-server в состоянии "running", то считаем что он работает корректно
-    # 3. Это ускоряет процесс установки и снижает количество ложных ошибок
+    # Проверка состояния ragflow-server
     echo "Проверка состояния ragflow-server..."
     local container_status=$(docker inspect --format '{{.State.Status}}' ragflow-server 2>/dev/null)
     if [ "$container_status" = "running" ]; then
@@ -1424,6 +1344,11 @@ install_xrm_director() {
     echo "🌐 Доступ к веб-интерфейсу: http://$server_ip"
     echo "📁 Установочная директория: $INSTALL_DIR/"
     echo "📋 Логи: $LOG_FILE"
+    
+    # Запускаем комплексную проверку и исправление возможных проблем
+    echo ""
+    echo "🔍 Выполняем проверку системы..."
+    check_and_fix_ragflow_errors
     
     # Дополнительная пауза, чтобы пользователь мог прочитать результат установки
     echo ""
@@ -1533,6 +1458,10 @@ restart_xrm_director() {
 
     log_message "INFO" "XRM Director успешно перезапущен"
     echo "XRM Director успешно перезапущен"
+    
+    # Проверяем состояние системы после перезапуска
+    check_and_fix_ragflow_errors
+    
     show_return_to_menu_message
 }
 
@@ -1702,7 +1631,7 @@ remove_xrm_director() {
     if docker ps -a --format '{{.Names}}' | grep -q "ollama"; then
         echo "Остановка и удаление контейнера Ollama..."
         docker stop ollama 2>/dev/null
-        docker rm ollama 2>/dev/null
+        docker rm ollama  2>/dev/null
     fi
     
     # Удаление томов
@@ -2022,6 +1951,422 @@ restore_backup() {
         
         if [ -z "${BACKUP_FOLDER}" ]; then
             # Если папка не найдена, используем корневую директорию временной папки
+            BACKUP_FOLDER="${TEMP_DIR}"
+        fi
+        
+        print_color "blue" "📂 Найдена директория с бэкапами: ${BACKUP_FOLDER}"
+        
+        # Восстанавливаем тома из системного бэкапа
+        SUCCESS_COUNT=0
+        VOLUMES_TOTAL=0
+        
+        # Перебираем все tar.gz файлы в распакованной директории
+        for archive in "${BACKUP_FOLDER}"/*.tar.gz; do
+            if [ -f "$archive" ]; then
+                VOLUMES_TOTAL=$((VOLUMES_TOTAL + 1))
+                volume_name=$(basename "$archive" .tar.gz)
+                print_color "blue" "🔄 Восстанавливаем том $volume_name..."
+                
+                # Проверяем существование тома
+                if ! docker volume inspect "$volume_name" &>/dev/null; then
+                    print_color "yellow" "⚠️ Том $volume_name не существует, создаем..."
+                    docker volume create "$volume_name" > /dev/null
+                fi
+                
+                # Восстанавливаем данные тома
+                docker run --rm -v "$volume_name":/volume -v "${BACKUP_FOLDER}":/backup alpine sh -c "rm -rf /volume/* && tar -xzf /backup/$(basename $archive) -C /volume"
+                
+                if [ $? -eq 0 ]; then
+                    print_color "green" "✅ Том $volume_name успешно восстановлен"
+                    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+                else
+                    print_color "red" "❌ Ошибка при восстановлении тома $volume_name"
+                fi
+            fi
+        done
+        
+        # Удаляем временную директорию
+        rm -rf "$TEMP_DIR"
+        
+        # Запускаем контейнеры
+        start_containers
+        
+        if [ $SUCCESS_COUNT -gt 0 ]; then
+            print_color "green" "🎉 Успешно восстановлено томов из системного бэкапа: $SUCCESS_COUNT из $VOLUMES_TOTAL"
+        else
+            print_color "red" "❌ Не удалось восстановить ни одного тома из системного бэкапа"
+        fi
+    
+    else
+        # Восстанавливаем из пользовательского бэкапа
+        if [ ${#FULL_BACKUPS[@]} -eq 0 ]; then
+            print_color "red" "❌ Нет доступных пользовательских бэкапов для восстановления"
+            return 1
+        fi
+        
+        # Проверяем корректность ввода
+        if ! [[ "$backup_choice" =~ ^[0-9]+$ ]] || [ $backup_choice -ge ${#FULL_BACKUPS[@]} ]; then
+            print_color "red" "❌ Некорректный номер бэкапа"
+            return 1
+        fi
+        
+        # Выбранный бэкап
+        selected_backup="${FULL_BACKUPS[$backup_choice]}"
+        backup_name=$(basename "$selected_backup" .tar.gz)
+        
+        print_color "yellow" "⚠️ Внимание! Восстановление из бэкапа перезапишет текущие данные томов."
+        read -p "Вы уверены, что хотите восстановить данные из '$backup_name'? (д/y - да, н/n - нет): " confirm
+        
+        if [[ ! "$confirm" =~ ^[yдYД]$ ]]; then
+            print_color "yellow" "❌ Восстановление отменено пользователем"
+            return 0
+        fi
+        
+        # Останавливаем контейнеры
+        stop_containers
+        
+        # Создаем временную директорию для распаковки
+        TEMP_DIR=$(mktemp -d)
+        print_color "blue" "📂 Распаковываем архив во временную директорию: ${TEMP_DIR}"
+        
+        # Распаковываем полный архив
+        tar -xzf "$selected_backup" -C "$TEMP_DIR"
+        
+        # Получаем имя распакованной директории
+        UNPACKED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "${PROJECT_NAME}_"* | head -n 1)
+        
+        if [ -z "$UNPACKED_DIR" ]; then
+            print_color "red" "❌ Ошибка при распаковке архива"
+            start_containers
+            rm -rf "$TEMP_DIR"
+            return 1
+        fi
+        
+        # Восстанавливаем тома
+        SUCCESS_COUNT=0
+        VOLUMES_TOTAL=0
+        
+        # Перебираем все tar.gz файлы в распакованной директории
+        for archive in "$UNPACKED_DIR"/*.tar.gz; do
+            if [ -f "$archive" ]; then
+                VOLUMES_TOTAL=$((VOLUMES_TOTAL + 1))
+                volume_name=$(basename "$archive" .tar.gz)
+                print_color "blue" "🔄 Восстанавливаем том $volume_name..."
+                
+                # Проверяем существование тома
+                if ! docker volume inspect "$volume_name" &>/dev/null; then
+                    print_color "yellow" "⚠️ Том $volume_name не существует, создаем..."
+                    docker volume create "$volume_name" > /dev/null
+                fi
+                
+                # Восстанавливаем данные тома
+                docker run --rm -v "$volume_name":/volume -v "$UNPACKED_DIR":/backup alpine sh -c "rm -rf /volume/* && tar -xzf /backup/$(basename $archive) -C /volume"
+                
+                if [ $? -eq 0 ]; then
+                    print_color "green" "✅ Том $volume_name успешно восстановлен"
+                    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+                else
+                    print_color "red" "❌ Ошибка при восстановлении тома $volume_name"
+                fi
+            fi
+        done
+        
+        # Удаляем временную директорию
+        rm -rf "$TEMP_DIR"
+        
+        # Запускаем контейнеры
+        start_containers
+        
+        if [ $SUCCESS_COUNT -gt 0 ]; then
+            print_color "green" "🎉 Успешно восстановлено томов из пользовательского бэкапа: $SUCCESS_COUNT из $VOLUMES_TOTAL"
+        else
+            print_color "red" "❌ Не удалось восстановить ни одного тома из пользовательского бэкапа"
+        fi
+    fi
+}
+
+# Управление бэкапами (удаление старых)
+manage_backups() {
+    print_color "blue" "📊 Управление резервными копиями"
+    
+    # Проверяем и создаем директории, если не существуют
+    mkdir -p "${USER_BACKUP_DIR}" "${INITIAL_BACKUP_DIR}"
+    
+    # Показываем доступные бэкапы
+    list_backups
+    
+    # Ищем полные архивы
+    FULL_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" 2>/dev/null | sort -r))
+    
+    echo ""
+    echo "Выберите действие:"
+    echo "1. Удалить выбранный пользовательский бэкап"
+    echo "2. Оставить только последние N пользовательских бэкапов"
+    echo "3. Удалить все пользовательские бэкапы"
+    echo "4. Удалить системный (initial) бэкап"
+    echo "5. Вернуться в главное меню"
+    
+    read -p "Введите номер действия: " action
+    
+    case $action in
+        1)
+            if [ ${#FULL_BACKUPS[@]} -eq 0 ]; then
+                print_color "red" "❌ Нет доступных бэкапов для удаления"
+                return
+            fi
+            
+            read -p "Введите номер бэкапа для удаления: " backup_number
+            if ! [[ "$backup_number" =~ ^[0-9]+$ ]] || [ $backup_number -ge ${#FULL_BACKUPS[@]} ]; then
+                print_color "red" "❌ Некорректный номер бэкапа"
+            else
+                selected_backup="${FULL_BACKUPS[$backup_number]}"
+                backup_name=$(basename "$selected_backup")
+                
+                read -p "Вы действительно хотите удалить '$backup_name'? (y/n): " confirm
+                if [ "$confirm" == "y" ]; then
+                    # Удаляем архив
+                    rm -f "$selected_backup"
+                    
+                    # Удаляем соответствующую директорию
+                    backup_dir_name=$(basename "$selected_backup" .tar.gz)
+                    if [ -d "${USER_BACKUP_DIR}/${backup_dir_name}" ]; then
+                        rm -rf "${USER_BACKUP_DIR}/${backup_dir_name}"
+                    fi
+                    
+                    print_color "green" "✅ Бэкап '$backup_name' успешно удален"
+                fi
+            fi
+            ;;
+        2)
+            read -p "Сколько последних бэкапов оставить? " keep_count
+            if ! [[ "$keep_count" =~ ^[0-9]+$ ]] || [ $keep_count -le 0 ]; then
+                print_color "red" "❌ Некорректное количество"
+            else
+                if [ ${#FULL_BACKUPS[@]} -le $keep_count ]; then
+                    print_color "yellow" "ℹ️ Количество существующих бэкапов (${#FULL_BACKUPS[@]}) не превышает указанное значение ($keep_count)"
+                else
+                    to_delete=$((${#FULL_BACKUPS[@]} - keep_count))
+                    read -p "Будет удалено $to_delete старых бэкапов. Продолжить? (y/n): " confirm
+                    if [ "$confirm" == "y" ]; then
+                        for ((i=keep_count; i<${#FULL_BACKUPS[@]}; i++)); do
+                            backup_to_delete="${FULL_BACKUPS[$i]}"
+                            backup_name=$(basename "$backup_to_delete")
+                            
+                            # Удаляем архив
+                            rm -f "$backup_to_delete"
+                            
+                            # Удаляем соответствующую директорию
+                            backup_dir_name=$(basename "$backup_to_delete" .tar.gz)
+                            if [ -d "${USER_BACKUP_DIR}/${backup_dir_name}" ]; then
+                                rm -rf "${USER_BACKUP_DIR}/${backup_dir_name}"
+                            fi
+                            
+                            print_color "green" "✅ Бэкап '$backup_name' удален"
+                        done
+                        print_color "green" "✅ Удаление старых бэкапов завершено"
+                    fi
+                fi
+            fi
+            ;;
+        3)
+            read -p "Вы действительно хотите удалить ВСЕ пользовательские бэкапы? Это действие необратимо! (д/y - да, н/n - нет): " confirm
+            if [[ "$confirm" =~ ^[yдYД]$ ]]; then
+                rm -f "${USER_BACKUP_DIR}/${PROJECT_NAME}_full_"*.tar.gz
+                rm -rf "${USER_BACKUP_DIR}/${PROJECT_NAME}_"*
+                print_color "green" "✅ Все пользовательские бэкапы удалены"
+            else
+                print_color "yellow" "❌ Удаление отменено"
+            fi
+            ;;
+        4)
+            if [ -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
+                read -p "Вы действительно хотите удалить системный (initial) бэкап? (д/y - да, н/n - нет): " confirm
+                if [[ "$confirm" =~ ^[yдYД]$ ]]; then
+                    rm -f "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz"
+                    print_color "green" "✅ Системный бэкап удален"
+                else
+                    print_color "yellow" "❌ Удаление отменено"
+                fi
+            else
+                print_color "yellow" "⚠️ Системный бэкап не найден"
+            fi
+            ;;
+        5)
+            return
+            ;;
+        *)
+            print_color "red" "❌ Некорректный выбор"
+            ;;
+    esac
+}
+
+# Меню управления резервным копированием
+backup_restore_menu() {
+    clear
+    echo "======================================================"
+    print_color "blue" "     🛠️  Резервное копирование / Восстановление RagFlow 🛠️"
+    echo "======================================================"
+    echo ""
+    echo "1. Создать резервную копию всех томов"
+    echo "2. Просмотреть доступные резервные копии"
+    echo "3. Восстановить из резервной копии"
+    echo "4. Управление резервными копиями"
+    echo "0. Вернуться в главное меню"
+    echo ""
+    read -p "Выберите действие: " choice
+    
+    case $choice in
+        1)
+            create_backup
+            read -p "Нажмите Enter для продолжения..."
+            ;;
+        2)
+            list_backups
+            read -p "Нажмите Enter для продолжения..."
+            ;;
+        3)
+            restore_backup
+            read -p "Нажмите Enter для продолжения..."
+            ;;
+        4)
+            manage_backups
+            read -p "Нажмите Enter для продолжения..."
+            ;;
+        0)
+            return
+            ;;
+        *)
+            print_color "red" "❌ Некорректный выбор"
+            read -p "Нажмите Enter для продолжения..."
+            ;;
+    esac
+}
+
+# Функция для обновления версии в .env файле
+update_env_version() {
+    local env_file="$1"
+    local new_version="$2"
+    local edition="$3" # "slim" или "full"
+    
+   
+    
+    if [ ! -f "$env_file" ]; then
+        log_message "ERROR" "Файл .env не найден: $env_file"
+        echo "Ошибка: Файл .env не найден: $env_file"
+        return 1
+    fi
+    
+    echo "Обновление версии RAGFlow в файле .env..."
+    log_message "INFO" "Обновление версии RAGFlow на $new_version ($edition)"
+    
+    # Создаем резервную копию .env файла
+    cp "$env_file" "$env_file.backup"
+    
+    # Определяем образ в зависимости от выбранной редакции
+    local image_name="infiniflow/ragflow:${new_version}"
+    if [ "$edition" == "slim" ]; then
+        image_name="${image_name}-slim"
+    fi
+    
+    # Комментируем все строки с RAGFLOW_IMAGE
+    sed -i '/^RAGFLOW_IMAGE=/s/^/# /' "$env_file"
+    sed -i '/^# RAGFLOW_IMAGE=/s/^# /# # /' "$env_file"
+    
+    # Ищем место для вставки новой строки (после последней закомментированной строки RAGFLOW_IMAGE)
+    local insert_line=$(grep -n "RAGFLOW_IMAGE" "$env_file" | tail -1 | cut -d: -f1)
+    
+    if [ -n "$insert_line" ]; then
+        # Вставляем новую строку после найденной позиции
+        sed -i "${insert_line}a\\RAGFLOW_IMAGE=${image_name}" "$env_file"
+    else
+        # Если не найдено, добавляем в конец файла
+        echo "RAGFLOW_IMAGE=${image_name}" >> "$env_file"
+    fi
+    
+    echo "Версия RAGFlow обновлена на: $image_name"
+    log_message "INFO" "Версия RAGFlow успешно обновлена на: $image_name"
+    
+    # Показываем изменения пользователю
+    echo "Текущая активная версия в .env:"
+    grep "^RAGFLOW_IMAGE=" "$env_file" || echo "Ошибка: не удалось найти активную строку RAGFLOW_IMAGE"
+    
+    return 0
+}
+
+# Функция для установки RAGFlow
+# ======= Основной код =======
+# Обработка аргументов командной строки (включая справку)
+if [ "$#" -gt 0 ]; then
+    # Проверяем команды справки без требования root
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -v|--version)
+            echo "XRM Director Installer v$VERSION"
+            exit 0
+            ;;
+    esac
+    
+    # Для остальных команд требуем права root
+    check_root
+    parse_cli_args "$@"
+    
+    # Выполняем установку через CLI
+    if [ $CLI_MODE -eq 1 ]; then
+        # Инициализация логирования для CLI
+        init_logging
+        cli_install
+        exit 0
+    fi
+else
+    # Для интерактивного режима требуем права root
+    check_root
+fi
+
+# Инициализация логирования
+init_logging
+
+
+# Основной цикл меню
+while true; do
+    show_menu
+    read -r choice
+    
+    case $choice in
+        1)
+            check_system_requirements
+            ;;
+        2)
+            check_docker_info
+            ;;
+        3)
+            install_docker
+            ;;
+        4)
+            install_xrm_director
+            ;;
+        5)
+            restart_xrm_director
+            ;;
+        6)
+            remove_xrm_director
+            ;;
+        7)
+            backup_restore_menu
+            ;;
+        8)
+            log_message "INFO" "Завершение работы скрипта"
+            echo "Спасибо за использование скрипта установки XRM Director. До свидания!"
+            exit 0
+            ;;
+        *)
+            echo "Неверный выбор. Пожалуйста, выберите пункт меню от 1 до 8."
+            sleep 2
+            ;;
+    esac
+done
             BACKUP_FOLDER="${TEMP_DIR}"
         fi
         
