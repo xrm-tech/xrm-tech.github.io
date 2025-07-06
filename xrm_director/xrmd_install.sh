@@ -1216,7 +1216,7 @@ install_xrm_director() {
     # Распаковка архива
     echo "Распаковка архива..."
     mkdir -p "$DOCKER_DIR"
-    if ! tar -xzf docker.tar.gz --strip-components=0; then
+    if ! tar -xzf docker.tar.gz --strip-components=1; then
         log_message "ERROR" "Не удалось распаковать архив"
         echo "Ошибка: Не удалось распаковать архив"
         return 1
