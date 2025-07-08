@@ -29,7 +29,7 @@ DATE_FORMAT="$(date +%Y-%m-%d_%H-%M-%S)"
 INITIAL_BACKUP_URL="https://files.x-rm.ru/xrm_director/backup/initial_backup.tar.gz"
 INITIAL_BACKUP_DIR="${BACKUP_DIR}/initial"
 USER_BACKUP_DIR="${BACKUP_DIR}/user"
-AUTO_RESTORE_INITIAL_BACKUP=1 # 0 - отключить, 1 - включить авторазвертывание initial backup
+AUTO_RESTORE_INITIAL_BACKUP=0 # 0 - отключить, 1 - включить авторазвертывание initial backup
 
 # ======= Переменные для командной строки =======
 CLI_MODE=0
