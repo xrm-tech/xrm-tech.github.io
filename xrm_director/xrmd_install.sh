@@ -229,6 +229,19 @@ install_xrm_director_cli() {
     fi
     log_message "INFO" "Архив успешно скачан: $INSTALL_DIR/docker.tar.gz"
     
+    # Создание директории utils и скачивание файла agent manager
+    echo "Создание директории для утилит и скачивание xrmd_agent_manager.py..."
+    mkdir -p "/opt/xrm-director/utils"
+    if ! curl -sSf https://files.x-rm.ru/xrm_director/xrmd_agent_manager.py -o "/opt/xrm-director/utils/xrmd_agent_manager.py"; then
+        log_message "WARNING" "Не удалось скачать файл xrmd_agent_manager.py"
+        echo "Предупреждение: Не удалось скачать файл xrmd_agent_manager.py"
+    else
+        log_message "INFO" "Файл xrmd_agent_manager.py успешно скачан в /opt/xrm-director/utils/"
+        echo "Файл xrmd_agent_manager.py успешно скачан в /opt/xrm-director/utils/"
+        # Установка прав на выполнение для скрипта
+        chmod +x "/opt/xrm-director/utils/xrmd_agent_manager.py"
+    fi
+
     # Создание директорий для резервных копий
     mkdir -p "${INITIAL_BACKUP_DIR}" "${USER_BACKUP_DIR}"
     
@@ -506,7 +519,9 @@ install_xrm_director_cli() {
     echo "📁 Установочная директория: $INSTALL_DIR/"
     echo "📋 Логи: $LOG_FILE"
     
-    return 0
+    # Дополнительная пауза, чтобы пользователь мог прочитать результат установки
+    echo ""
+    read -p "Нажмите Enter для продолжения..." -r
 }
 
 # Функция автоматической установки через CLI
@@ -1456,6 +1471,177 @@ install_xrm_director() {
     read -p "Нажмите Enter для продолжения..." -r
 }
 
+# Функция для установки Python и ragflow_sdk
+install_python_and_ragflow_sdk() {
+    # ======= Код установки Python и ragflow_sdk =======
+    # Останавливать выполнение при любой ошибке
+    set -euo pipefail
+
+    # --- Константы ---
+    REQUIRED_PYTHON_MAJOR=3
+    REQUIRED_PYTHON_MINOR_MIN=10
+    REQUIRED_PYTHON_MINOR_MAX=13
+    INSTALL_PYTHON_VERSION="3.11.9"
+    RAGFLOW_SDK_WHEEL_URL="https://files.pythonhosted.org/packages/ef/4a/3dc10a23462cbeddfd39b8eb75d974b085476682f47952659c73eed2bf11/ragflow_sdk-0.19.1-py3-none-any.whl"
+    VENV_DIR="$HOME/venvs/dev"
+
+    # --- Функции ---
+
+    # Вывод сообщений
+    log() {
+        echo "--------------------------------------------------"
+        echo "$1"
+        echo "--------------------------------------------------"
+    }
+
+    # Функция для очистки проблемного виртуального окружения
+    cleanup_venv() {
+        if [ -d "$VENV_DIR" ]; then
+            log "Удаление существующего виртуального окружения..."
+            rm -rf "$VENV_DIR"
+            log "Виртуальное окружение удалено."
+        fi
+    }
+
+    # Проверка и установка Python
+    install_python_if_needed() {
+        log "Проверка версии Python..."
+        if command -v python3 &>/dev/null; then
+            PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+            PY_MAJOR=$(echo "$PY_VERSION" | cut -d. -f1)
+            PY_MINOR=$(echo "$PY_VERSION" | cut -d. -f2)
+
+            if [ "$PY_MAJOR" -eq "$REQUIRED_PYTHON_MAJOR" ] && \
+               [ "$PY_MINOR" -ge "$REQUIRED_PYTHON_MINOR_MIN" ] && \
+               [ "$PY_MINOR" -lt "$REQUIRED_PYTHON_MINOR_MAX" ]; then
+                log "Найдена подходящая версия Python: $PY_VERSION. Установка новой версии не требуется."
+                PYTHON_EXECUTABLE="python3"
+                PIP_EXECUTABLE="pip3"
+                return
+            fi
+        fi
+
+        log "Подходящая версия Python не найдена. Установка Python $INSTALL_PYTHON_VERSION..."
+        
+        log "Обновление системы..."
+        sudo dnf update -y
+
+        log "Установка инструментов для сборки..."
+        sudo dnf groupinstall -y "Development Tools"
+        sudo dnf install -y \
+             openssl-devel bzip2-devel libffi-devel zlib-devel \
+             readline-devel sqlite-devel tk-devel wget
+
+        log "Скачивание и распаковка исходников Python..."
+        cd /usr/src
+        sudo wget --no-check-certificate "https://www.python.org/ftp/python/$INSTALL_PYTHON_VERSION/Python-$INSTALL_PYTHON_VERSION.tgz"
+        sudo tar -xzf "Python-$INSTALL_PYTHON_VERSION.tgz"
+        cd "Python-$INSTALL_PYTHON_VERSION"
+
+        log "Сборка и установка Python..."
+        sudo ./configure --enable-optimizations --with-ensurepip=install
+        sudo make -j"$(nproc)"
+        sudo make altinstall
+
+        PYTHON_EXECUTABLE="/usr/local/bin/python$(echo $INSTALL_PYTHON_VERSION | cut -d. -f1,2)"
+        PIP_EXECUTABLE="/usr/local/bin/pip$(echo $INSTALL_PYTHON_VERSION | cut -d. -f1,2)"
+
+        log "Проверка установленной версии..."
+        "$PYTHON_EXECUTABLE" --version
+        "$PIP_EXECUTABLE" --version
+        
+        log "Python $INSTALL_PYTHON_VERSION успешно установлен."
+    }
+
+    # Настройка виртуального окружения
+    setup_virtual_env() {
+        log "Создание виртуального окружения в $VENV_DIR..."
+        
+        # Создаем директорию для виртуального окружения с правильными правами
+        mkdir -p "$(dirname "$VENV_DIR")"
+        
+        if [ ! -d "$VENV_DIR" ]; then
+            "$PYTHON_EXECUTABLE" -m venv "$VENV_DIR"
+            log "Виртуальное окружение создано."
+        else
+            log "Виртуальное окружение уже существует."
+        fi
+        
+        # Убеждаемся, что у пользователя есть права на виртуальное окружение
+        if [ "$EUID" -eq 0 ]; then
+            # Если скрипт запускается от root, передаем права обычному пользователю
+            if [ -n "${SUDO_USER:-}" ]; then
+                chown -R "$SUDO_USER:$SUDO_USER" "$VENV_DIR"
+                log "Права на виртуальное окружение переданы пользователю $SUDO_USER"
+            fi
+        fi
+        
+        log "Активируйте окружение командой: source $VENV_DIR/bin/activate"
+        # Активация в текущем скрипте
+        # shellcheck source=/dev/null
+        source "$VENV_DIR/bin/activate"
+    }
+
+    # Установка ragflow-sdk
+    install_ragflow() {
+        log "Установка ragflow-sdk..."
+        local wheel_filename
+        wheel_filename=$(basename "$RAGFLOW_SDK_WHEEL_URL")
+        
+        if [ ! -f "$wheel_filename" ]; then
+            log "Скачивание $wheel_filename..."
+            wget --no-check-certificate "$RAGFLOW_SDK_WHEEL_URL"
+        else
+            log "$wheel_filename уже скачан."
+        fi
+
+        log "Установка пакета..."
+        pip install "$wheel_filename"
+
+        log "Проверка зависимостей..."
+        python -c "from ragflow_sdk import RAGFlow; print('ragflow_sdk импортирован успешно!')"
+        # Остальные зависимости являются стандартными библиотеками Python
+        
+        log "Установка ragflow-sdk завершена."
+    }
+
+    # --- Основная логика ---
+    main() {
+        # Проверяем, что скрипт не запускается от root без SUDO_USER
+        if [ "$EUID" -eq 0 ] && [ -z "${SUDO_USER:-}" ]; then
+            echo "Ошибка: Не запускайте скрипт напрямую от root."
+            exit 1
+        fi
+        
+        # Если передан параметр --cleanup, очищаем виртуальное окружение
+        if [ "${1:-}" = "--cleanup" ]; then
+            cleanup_venv
+
+            log "Очистка завершена. Запустите скрипт снова без параметров для переустановки."
+            exit 0
+        fi
+        
+        install_python_if_needed
+        setup_virtual_env
+        install_ragflow
+        
+        log "Все операции успешно завершены!"
+        echo "Не забудьте активировать окружение в новой сессии терминала:"
+        echo "source $VENV_DIR/bin/activate"
+        
+        # Показываем информацию о пользователе для активации
+        if [ -n "${SUDO_USER:-}" ]; then
+            echo ""
+            echo "Примечание: Вы запустили скрипт через sudo."
+            echo "Виртуальное окружение настроено для пользователя: $SUDO_USER"
+            echo "Войдите под пользователем $SUDO_USER и активируйте окружение."
+        fi
+    }
+
+    # Запуск
+    main "$@"
+}
+
 # Функция для перезапуска XRM Director
 restart_xrm_director() {
     log_message "INFO" "Перезапуск XRM Director..."
@@ -1805,7 +1991,8 @@ show_menu() {
     echo "5. Перезапустить XRM Director"
     echo "6. Удалить XRM Director"
     echo "7. Резервное копирование / Восстановление"
-    echo "8. Выйти"
+    echo "8. Установить Python/ragflow_sdk"
+    echo "9. Выйти"
     echo ""
     echo -n "Выберите пункт меню: "
 }
@@ -2177,7 +2364,7 @@ manage_backups() {
     
     # Ищем полные архивы
     FULL_BACKUPS=($(find "${USER_BACKUP_DIR}" -maxdepth 1 -name "${PROJECT_NAME}_full_*.tar.gz" 2>/dev/null | sort -r))
-    
+
     echo ""
     echo "Выберите действие:"
     echo "1. Удалить выбранный пользовательский бэкап"
@@ -2433,12 +2620,17 @@ while true; do
             backup_restore_menu
             ;;
         8)
+            echo "Вы выбрали: Установить Python/ragflow_sdk"
+            # Вызов функции установки Python и ragflow_sdk
+            install_python_and_ragflow_sdk
+            ;;
+        9)
             log_message "INFO" "Завершение работы скрипта"
             echo "Спасибо за использование скрипта установки XRM Director. До свидания!"
             exit 0
             ;;
         *)
-            echo "Неверный выбор. Пожалуйста, выберите пункт меню от 1 до 8."
+            echo "Неверный выбор. Пожалуйста, выберите пункт меню от 1 до 9."
             sleep 2
             ;;
     esac
