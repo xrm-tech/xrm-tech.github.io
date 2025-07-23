@@ -1059,7 +1059,6 @@ install_docker() {
         else
             log_message "INFO" "Пользователь $username успешно добавлен в группу docker"
             echo "Пользователь $username успешно добавлен в группу docker"
-            echo "ВАЖНО: Для применения изменений необходимо выйти из системы и войти снова"
         fi
     else
         log_message "ERROR" "Пользователь $username не существует"
