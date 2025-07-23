@@ -242,6 +242,25 @@ install_xrm_director_cli() {
         chmod +x "/opt/xrm-director/utils/xrmd_agent_manager.py"
     fi
 
+    # Установка pip и ragflow-sdk
+    echo "Установка pip..."
+    if ! dnf install python3-pip -y; then
+        log_message "WARNING" "Не удалось установить python3-pip"
+        echo "Предупреждение: Не удалось установить python3-pip"
+    else
+        log_message "INFO" "python3-pip успешно установлен"
+        echo "python3-pip успешно установлен"
+        
+        echo "Установка ragflow-sdk..."
+        if ! pip3 install ragflow-sdk; then
+            log_message "WARNING" "Не удалось установить ragflow-sdk"
+            echo "Предупреждение: Не удалось установить ragflow-sdk"
+        else
+            log_message "INFO" "ragflow-sdk успешно установлен"
+            echo "ragflow-sdk успешно установлен"
+        fi
+    fi
+
     # Создание директорий для резервных копий
     mkdir -p "${INITIAL_BACKUP_DIR}" "${USER_BACKUP_DIR}"
     
@@ -366,7 +385,7 @@ install_xrm_director_cli() {
             # Распаковываем архив
             tar -xzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" -C "${TEMP_RESTORE_DIR}"
             
-            # Находим директорию с бэкапами (обычно имеет формат ragflow_DATE)
+            # Находим директорию с бэкапами (обычно имеет формат ragflow_*)
             BACKUP_FOLDER=$(find "${TEMP_RESTORE_DIR}" -type d -name "ragflow_*" | head -n 1)
             
             if [ -z "${BACKUP_FOLDER}" ]; then
@@ -628,6 +647,23 @@ check_system_requirements_silent() {
         echo "✅ ОС: $(cat /etc/redhat-release 2>/dev/null || cat /etc/centos-release 2>/dev/null)"
     fi
     
+    # Проверка версии ОС
+    if [ -f /etc/os-release ]; then
+        local os_name=$(grep '^NAME=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        local os_version_str=$(grep '^VERSION=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        local os_version_num=$(echo "$os_version_str" | grep -oP '\(\K[0-9]+\.[0-9]+' 2>/dev/null || echo "$os_version_str" | awk '{print $NF}' | cut -d. -f1-2)
+        local os_major=$(echo "$os_version_num" | cut -d. -f1)
+        
+        if [ -n "$os_major" ] && [ "$os_major" -ge 8 ] 2>/dev/null; then
+            echo "4. ОС: $os_name $os_version_str - OK"
+        else
+            echo "4. ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ"
+            echo "   Для нормального функционирования рекомендуем RED OS версии 8.0 или выше."
+        fi
+    else
+        echo "4. ОС: Не удалось определить версию ОС"
+    fi
+    
     # Проверка CPU
     local cpu_cores=$(nproc)
     if [ "$cpu_cores" -lt "$REQUIRED_CPU_CORES" ]; then
@@ -722,7 +758,7 @@ check_docker_before_install() {
     
     if ! command -v docker &> /dev/null; then
         log_message "ERROR" "Docker не установлен. Необходимо установить Docker для продолжения."
-        print_color "red" "❌ Docker не установлен. Необходима установка Docker для продолжения."
+        print_color "red" "❌ Docker не установлен. Установите Docker для продолжения."
         
         # Предложение установить Docker
         if ask_yes_no "Хотите установить Docker прямо сейчас?"; then
@@ -869,18 +905,29 @@ check_system_requirements() {
     local disk_gb=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
     log_message "INFO" "Свободное место на диске: $disk_gb ГБ (требуется: $REQUIRED_DISK_GB ГБ)"
     
-    # Отображение результатов проверки
-    echo "====== Результаты проверки системных требований ======"
-    echo "1. ЦП: $cpu_cores ядер (минимум: $REQUIRED_CPU_CORES) - $([ "$cpu_cores" -ge "$REQUIRED_CPU_CORES" ] && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
-    echo "2. Оперативная память: $ram_gb ГБ (минимум: $REQUIRED_RAM_GB ГБ) - $([ "$ram_gb" -ge "$REQUIRED_RAM_GB" ] && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
-    echo "3. Диск: $disk_gb ГБ свободно (минимум: $REQUIRED_DISK_GB ГБ) - $([ "$disk_gb" -ge "$REQUIRED_DISK_GB" ] && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
+    # Проверка версии ОС
+    if [ -f /etc/os-release ]; then
+        local os_name=$(grep '^NAME=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        local os_version_str=$(grep '^VERSION=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        local os_version_num=$(echo "$os_version_str" | grep -oP '\(\K[0-9]+\.[0-9]+' 2>/dev/null || echo "$os_version_str" | awk '{print $NF}' | cut -d. -f1-2)
+        local os_major=$(echo "$os_version_num" | cut -d. -f1)
+        
+        if [ -n "$os_major" ] && [ "$os_major" -ge 8 ] 2>/dev/null; then
+            echo "4. ОС: $os_name $os_version_str - OK"
+        else
+            echo "4. ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ"
+            echo "   Для нормального функционирования рекомендуем RED OS версии 8.0 или выше."
+        fi
+    else
+        echo "4. ОС: Не удалось определить версию ОС"
+    fi
     
     # Проверка Docker, если установлен
     if command -v docker &>/dev/null; then
         local docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
-        echo "4. Docker: $docker_version (минимум: $DOCKER_MIN_VERSION) - $(check_version "$docker_version" "$DOCKER_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
+        echo "5. Docker: $docker_version (минимум: $DOCKER_MIN_VERSION) - $(check_version "$docker_version" "$DOCKER_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
     else
-        echo "4. Docker: Не установлен"
+        echo "5. Docker: Не установлен"
     fi
     
     # Проверка Docker Compose, если установлен
@@ -888,10 +935,32 @@ check_system_requirements() {
         # Упрощенное получение версии Docker Compose
         local compose_version=$(docker compose version | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+")
         
-        echo "5. Docker Compose: $compose_version (минимум: $DOCKER_COMPOSE_MIN_VERSION) - $(check_version "$compose_version" "$DOCKER_COMPOSE_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
+        echo "6. Docker Compose: $compose_version (минимум: $DOCKER_COMPOSE_MIN_VERSION) - $(check_version "$compose_version" "$DOCKER_COMPOSE_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
     else
-        echo "5. Docker Compose: Не установлен"
+        echo "6. Docker Compose: Не установлен"
     fi
+    
+    # Проверка Python, если установлен
+    if command -v python3 &>/dev/null; then
+        local python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')
+        local python_major=$(echo "$python_version" | cut -d. -f1)
+        local python_minor=$(echo "$python_version" | cut -d. -f2)
+        
+        # Проверка совместимости версии Python для ragflow-sdk
+        if [ "$python_major" -eq 3 ] && [ "$python_minor" -ge 10 ] && [ "$python_minor" -le 13 ]; then
+            echo "7. Python: $python_version - OK (совместим с ragflow-sdk)"
+        else
+            echo "7. Python: $python_version - ПРЕДУПРЕЖДЕНИЕ"
+            echo "   Для работы с утилитой \"Менеджер по работе с агентами XRM Director\""
+            echo "   требуется ragflow-sdk, для его установки рекомендуем установить python версии >3.10 - <3.13"
+            echo "   например 3.11.9.\""
+        fi
+    else
+        echo "7. Python: Не установлен"
+        echo "   Для работы с утилитой \"Менеджер по работе с агентами XRM Director\" рекомендуется"
+        echo "   установить Python версии 3.10-3.13 (например 3.11.9) и ragflow-sdk\""
+    fi
+    
     echo "===================================================="
     show_return_to_menu_message
 }
@@ -1192,6 +1261,25 @@ install_xrm_director() {
     # Создание директорий для резервных копий
     mkdir -p "${INITIAL_BACKUP_DIR}" "${USER_BACKUP_DIR}"
     
+    # Установка pip и ragflow-sdk
+    echo "Установка pip..."
+    if ! dnf install python3-pip -y; then
+        log_message "WARNING" "Не удалось установить python3-pip"
+        echo "Предупреждение: Не удалось установить python3-pip"
+    else
+        log_message "INFO" "python3-pip успешно установлен"
+        echo "python3-pip успешно установлен"
+        
+        echo "Установка ragflow-sdk..."
+        if ! pip3 install ragflow-sdk; then
+            log_message "WARNING" "Не удалось установить ragflow-sdk"
+            echo "Предупреждение: Не удалось установить ragflow-sdk"
+        else
+            log_message "INFO" "ragflow-sdk успешно установлен"
+            echo "ragflow-sdk успешно установлен"
+        fi
+    fi
+    
     # Скачивание initial backup только в директорию initial
     echo "Загрузка initial backup..."
     if ! wget --no-check-certificate -O "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" "${INITIAL_BACKUP_URL}" || [ ! -s "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
@@ -1313,7 +1401,7 @@ install_xrm_director() {
             # Распаковываем архив
             tar -xzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" -C "${TEMP_RESTORE_DIR}"
             
-            # Находим директорию с бэкапами (обычно имеет формат ragflow_DATE)
+            # Находим директорию с бэкапами (обычно имеет формат ragflow_*)
             BACKUP_FOLDER=$(find "${TEMP_RESTORE_DIR}" -type d -name "ragflow_*" | head -n 1)
             
             if [ -z "${BACKUP_FOLDER}" ]; then
@@ -1471,177 +1559,6 @@ install_xrm_director() {
     read -p "Нажмите Enter для продолжения..." -r
 }
 
-# Функция для установки Python и ragflow_sdk
-install_python_and_ragflow_sdk() {
-    # ======= Код установки Python и ragflow_sdk =======
-    # Останавливать выполнение при любой ошибке
-    set -euo pipefail
-
-    # --- Константы ---
-    REQUIRED_PYTHON_MAJOR=3
-    REQUIRED_PYTHON_MINOR_MIN=10
-    REQUIRED_PYTHON_MINOR_MAX=13
-    INSTALL_PYTHON_VERSION="3.11.9"
-    RAGFLOW_SDK_WHEEL_URL="https://files.pythonhosted.org/packages/ef/4a/3dc10a23462cbeddfd39b8eb75d974b085476682f47952659c73eed2bf11/ragflow_sdk-0.19.1-py3-none-any.whl"
-    VENV_DIR="$HOME/venvs/dev"
-
-    # --- Функции ---
-
-    # Вывод сообщений
-    log() {
-        echo "--------------------------------------------------"
-        echo "$1"
-        echo "--------------------------------------------------"
-    }
-
-    # Функция для очистки проблемного виртуального окружения
-    cleanup_venv() {
-        if [ -d "$VENV_DIR" ]; then
-            log "Удаление существующего виртуального окружения..."
-            rm -rf "$VENV_DIR"
-            log "Виртуальное окружение удалено."
-        fi
-    }
-
-    # Проверка и установка Python
-    install_python_if_needed() {
-        log "Проверка версии Python..."
-        if command -v python3 &>/dev/null; then
-            PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-            PY_MAJOR=$(echo "$PY_VERSION" | cut -d. -f1)
-            PY_MINOR=$(echo "$PY_VERSION" | cut -d. -f2)
-
-            if [ "$PY_MAJOR" -eq "$REQUIRED_PYTHON_MAJOR" ] && \
-               [ "$PY_MINOR" -ge "$REQUIRED_PYTHON_MINOR_MIN" ] && \
-               [ "$PY_MINOR" -lt "$REQUIRED_PYTHON_MINOR_MAX" ]; then
-                log "Найдена подходящая версия Python: $PY_VERSION. Установка новой версии не требуется."
-                PYTHON_EXECUTABLE="python3"
-                PIP_EXECUTABLE="pip3"
-                return
-            fi
-        fi
-
-        log "Подходящая версия Python не найдена. Установка Python $INSTALL_PYTHON_VERSION..."
-        
-        log "Обновление системы..."
-        sudo dnf update -y
-
-        log "Установка инструментов для сборки..."
-        sudo dnf groupinstall -y "Development Tools"
-        sudo dnf install -y \
-             openssl-devel bzip2-devel libffi-devel zlib-devel \
-             readline-devel sqlite-devel tk-devel wget
-
-        log "Скачивание и распаковка исходников Python..."
-        cd /usr/src
-        sudo wget --no-check-certificate "https://www.python.org/ftp/python/$INSTALL_PYTHON_VERSION/Python-$INSTALL_PYTHON_VERSION.tgz"
-        sudo tar -xzf "Python-$INSTALL_PYTHON_VERSION.tgz"
-        cd "Python-$INSTALL_PYTHON_VERSION"
-
-        log "Сборка и установка Python..."
-        sudo ./configure --enable-optimizations --with-ensurepip=install
-        sudo make -j"$(nproc)"
-        sudo make altinstall
-
-        PYTHON_EXECUTABLE="/usr/local/bin/python$(echo $INSTALL_PYTHON_VERSION | cut -d. -f1,2)"
-        PIP_EXECUTABLE="/usr/local/bin/pip$(echo $INSTALL_PYTHON_VERSION | cut -d. -f1,2)"
-
-        log "Проверка установленной версии..."
-        "$PYTHON_EXECUTABLE" --version
-        "$PIP_EXECUTABLE" --version
-        
-        log "Python $INSTALL_PYTHON_VERSION успешно установлен."
-    }
-
-    # Настройка виртуального окружения
-    setup_virtual_env() {
-        log "Создание виртуального окружения в $VENV_DIR..."
-        
-        # Создаем директорию для виртуального окружения с правильными правами
-        mkdir -p "$(dirname "$VENV_DIR")"
-        
-        if [ ! -d "$VENV_DIR" ]; then
-            "$PYTHON_EXECUTABLE" -m venv "$VENV_DIR"
-            log "Виртуальное окружение создано."
-        else
-            log "Виртуальное окружение уже существует."
-        fi
-        
-        # Убеждаемся, что у пользователя есть права на виртуальное окружение
-        if [ "$EUID" -eq 0 ]; then
-            # Если скрипт запускается от root, передаем права обычному пользователю
-            if [ -n "${SUDO_USER:-}" ]; then
-                chown -R "$SUDO_USER:$SUDO_USER" "$VENV_DIR"
-                log "Права на виртуальное окружение переданы пользователю $SUDO_USER"
-            fi
-        fi
-        
-        log "Активируйте окружение командой: source $VENV_DIR/bin/activate"
-        # Активация в текущем скрипте
-        # shellcheck source=/dev/null
-        source "$VENV_DIR/bin/activate"
-    }
-
-    # Установка ragflow-sdk
-    install_ragflow() {
-        log "Установка ragflow-sdk..."
-        local wheel_filename
-        wheel_filename=$(basename "$RAGFLOW_SDK_WHEEL_URL")
-        
-        if [ ! -f "$wheel_filename" ]; then
-            log "Скачивание $wheel_filename..."
-            wget --no-check-certificate "$RAGFLOW_SDK_WHEEL_URL"
-        else
-            log "$wheel_filename уже скачан."
-        fi
-
-        log "Установка пакета..."
-        pip install "$wheel_filename"
-
-        log "Проверка зависимостей..."
-        python -c "from ragflow_sdk import RAGFlow; print('ragflow_sdk импортирован успешно!')"
-        # Остальные зависимости являются стандартными библиотеками Python
-        
-        log "Установка ragflow-sdk завершена."
-    }
-
-    # --- Основная логика ---
-    main() {
-        # Проверяем, что скрипт не запускается от root без SUDO_USER
-        if [ "$EUID" -eq 0 ] && [ -z "${SUDO_USER:-}" ]; then
-            echo "Ошибка: Не запускайте скрипт напрямую от root."
-            exit 1
-        fi
-        
-        # Если передан параметр --cleanup, очищаем виртуальное окружение
-        if [ "${1:-}" = "--cleanup" ]; then
-            cleanup_venv
-
-            log "Очистка завершена. Запустите скрипт снова без параметров для переустановки."
-            exit 0
-        fi
-        
-        install_python_if_needed
-        setup_virtual_env
-        install_ragflow
-        
-        log "Все операции успешно завершены!"
-        echo "Не забудьте активировать окружение в новой сессии терминала:"
-        echo "source $VENV_DIR/bin/activate"
-        
-        # Показываем информацию о пользователе для активации
-        if [ -n "${SUDO_USER:-}" ]; then
-            echo ""
-            echo "Примечание: Вы запустили скрипт через sudo."
-            echo "Виртуальное окружение настроено для пользователя: $SUDO_USER"
-            echo "Войдите под пользователем $SUDO_USER и активируйте окружение."
-        fi
-    }
-
-    # Запуск
-    main "$@"
-}
-
 # Функция для перезапуска XRM Director
 restart_xrm_director() {
     log_message "INFO" "Перезапуск XRM Director..."
@@ -1705,6 +1622,7 @@ restart_xrm_director() {
     # Перезапуск контейнеров ragflow
     if [ -n "$ragflow_containers" ]; then
         echo "Перезапуск контейнеров ragflow..."
+
         for container in $ragflow_containers; do
             echo "Перезапуск контейнера $container..."
             if ! docker restart "$container"; then
@@ -1777,7 +1695,8 @@ remove_xrm_director() {
                 echo "$ollama_images"
             fi
             
-            echo "Хотите удалить найденные образы? (д/н)"
+            # Исправление синтаксической ошибки: убираем лишние скобки
+            echo "Хотите удалить найденные образы? д/н"
             if ask_yes_no "Хотите удалить найденные образы?"; then
                 # Удаление образов RAGFlow
                 if [[ -n "$ragflow_images" ]]; then
@@ -1942,7 +1861,7 @@ remove_xrm_director() {
     if [ -n "$ollama_images" ]; then
         echo "Найдены образы Ollama для удаления:"
         echo "$ollama_images"
-        echo "$ollama_images" | while read -r image; do
+        echo "$olloma_images" | while read -r image; do
             echo "Удаление образа: $image"
             if docker rmi -f "$image" 2>/dev/null; then
                 echo "✅ Образ $image успешно удален"
@@ -1991,8 +1910,7 @@ show_menu() {
     echo "5. Перезапустить XRM Director"
     echo "6. Удалить XRM Director"
     echo "7. Резервное копирование / Восстановление"
-    echo "8. Установить Python/ragflow_sdk"
-    echo "9. Выйти"
+    echo "8. Выйти"
     echo ""
     echo -n "Выберите пункт меню: "
 }
@@ -2104,7 +2022,7 @@ create_backup() {
     docker ps -a >> "${BACKUP_SUBDIR}/backup_info.txt"
     
     # Выводим информацию о созданных архивах
-    print_color "blue" "📊 Информация о созданном бэкапе:"
+    print_color "blue" "📊 Информация о созданном бэке:"
     if [ $SUCCESS_COUNT -gt 0 ]; then
       ls -lh ${BACKUP_SUBDIR}/*.tar.gz 2>/dev/null
       print_color "green" "🎉 Успешно архивировано томов: ${SUCCESS_COUNT} из ${#VOLUMES[@]}"
@@ -2215,7 +2133,7 @@ restore_backup() {
         # Распаковываем архив
         tar -xzf "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" -C "${TEMP_DIR}"
         
-        # Находим директорию с бэкапами (обычно имеет формат ragflow_DATE)
+        # Находим директорию с бэкапами (обычно имеет формат ragflow_*)
         BACKUP_FOLDER=$(find "${TEMP_DIR}" -type d -name "ragflow_*" | head -n 1)
         
         if [ -z "${BACKUP_FOLDER}" ]; then
@@ -2557,40 +2475,19 @@ update_env_version() {
 }
 
 # Функция для установки RAGFlow
-# ======= Основной код =======
-# Обработка аргументов командной строки (включая справку)
-if [ "$#" -gt 0 ]; then
-    # Проверяем команды справки без требования root
-    case "$1" in
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        -v|--version)
-            echo "XRM Director Installer v$VERSION"
-            exit 0
-            ;;
-    esac
-    
-    # Для остальных команд требуем права root
-    check_root
-    parse_cli_args "$@"
-    
-    # Выполняем установку через CLI
-    if [ $CLI_MODE -eq 1 ]; then
-        # Инициализация логирования для CLI
-        init_logging
-        cli_install
-        exit 0
-    fi
-else
-    # Для интерактивного режима требуем права root
-    check_root
+check_root
+parse_cli_args "$@"
+
+# Выполняем установку через CLI
+if [ $CLI_MODE -eq 1 ]; then
+    # Инициализация логирования для CLI
+    init_logging
+    cli_install
+    exit 0
 fi
 
 # Инициализация логирования
 init_logging
-
 
 # Основной цикл меню
 while true; do
@@ -2620,17 +2517,12 @@ while true; do
             backup_restore_menu
             ;;
         8)
-            echo "Вы выбрали: Установить Python/ragflow_sdk"
-            # Вызов функции установки Python и ragflow_sdk
-            install_python_and_ragflow_sdk
-            ;;
-        9)
             log_message "INFO" "Завершение работы скрипта"
             echo "Спасибо за использование скрипта установки XRM Director. До свидания!"
             exit 0
             ;;
         *)
-            echo "Неверный выбор. Пожалуйста, выберите пункт меню от 1 до 9."
+            echo "Неверный выбор. Пожалуйста, выберите пункт меню от 1 до 8."
             sleep 2
             ;;
     esac

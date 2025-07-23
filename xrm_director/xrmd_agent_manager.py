@@ -35,7 +35,7 @@ sqlite3.register_converter("DATETIME", convert_datetime)
 
 # Параметры подключения к RAGFlow
 API_KEY = "ragflow-ZjNTQxMjc0ZTE2ZTExZWZiYzQ3MDI0Mm"
-BASE_URL = "http://51.68.234.104:9380"
+BASE_URL = "http://127.0.0.1:9380"
 
 # Настройки чата с агентом
 ENABLE_STREAMING = True           # Использовать потоковую передачу ответов (True/False)
