@@ -534,7 +534,6 @@ install_xrm_director_cli() {
     
     log_message "INFO" "XRM Director успешно установлен"
     echo "✅ XRM Director успешно установлен!"
-    echo "🌐 Доступ к веб-интерфейсу: http://$server_ip"
     echo "📁 Установочная директория: $INSTALL_DIR/"
     echo "📋 Логи: $LOG_FILE"
     
@@ -1548,7 +1547,6 @@ install_xrm_director() {
     
     log_message "INFO" "XRM Director успешно установлен"
     echo "✅ XRM Director успешно установлен!"
-    echo "🌐 Доступ к веб-интерфейсу: http://$server_ip"
     echo "📁 Установочная директория: $INSTALL_DIR/"
     echo "📋 Логи: $LOG_FILE"
     
