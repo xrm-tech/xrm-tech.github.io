@@ -636,7 +636,7 @@ check_system_requirements_silent() {
     
     echo "📋 Проверка системных требований:"
     
-    # Проверка ОС
+    # Проверка ОС и её версии
     if [ ! -f /etc/redhat-release ] && [ ! -f /etc/centos-release ]; then
         echo "❌ ОС: Неподдерживаемая операционная система"
         echo "   Требуется: Red Hat Enterprise Linux / CentOS"
@@ -644,24 +644,23 @@ check_system_requirements_silent() {
         warnings+=("Неподдерживаемая операционная система")
         all_ok=0
     else
-        echo "✅ ОС: $(cat /etc/redhat-release 2>/dev/null || cat /etc/centos-release 2>/dev/null)"
-    fi
-    
-    # Проверка версии ОС
-    if [ -f /etc/os-release ]; then
-        local os_name=$(grep '^NAME=' /etc/os-release | cut -d= -f2 | tr -d '"')
-        local os_version_str=$(grep '^VERSION=' /etc/os-release | cut -d= -f2 | tr -d '"')
-        local os_version_num=$(echo "$os_version_str" | grep -oP '\(\K[0-9]+\.[0-9]+' 2>/dev/null || echo "$os_version_str" | awk '{print $NF}' | cut -d. -f1-2)
-        local os_major=$(echo "$os_version_num" | cut -d. -f1)
+        local os_display_name=$(cat /etc/redhat-release 2>/dev/null || cat /etc/centos-release 2>/dev/null)
         
-        if [ -n "$os_major" ] && [ "$os_major" -ge 8 ] 2>/dev/null; then
-            echo "4. ОС: $os_name $os_version_str - OK"
+        if [ -f /etc/os-release ]; then
+            local os_name=$(grep '^NAME=' /etc/os-release | cut -d= -f2 | tr -d '"')
+            local os_version_str=$(grep '^VERSION=' /etc/os-release | cut -d= -f2 | tr -d '"')
+            local os_version_num=$(echo "$os_version_str" | grep -oP '\(\K[0-9]+\.[0-9]+' 2>/dev/null || echo "$os_version_str" | awk '{print $NF}' | cut -d. -f1-2)
+            local os_major=$(echo "$os_version_num" | cut -d. -f1)
+            
+            if [ -n "$os_major" ] && [ "$os_major" -ge 8 ] 2>/dev/null; then
+                echo "✅ ОС: $os_name $os_version_str - OK"
+            else
+                echo "✅ ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ"
+                echo "   Для нормального функционирования рекомендуем RED OS версии 8.0 или выше."
+            fi
         else
-            echo "4. ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ"
-            echo "   Для нормального функционирования рекомендуем RED OS версии 8.0 или выше."
+            echo "✅ ОС: $os_display_name - Не удалось определить версию ОС"
         fi
-    else
-        echo "4. ОС: Не удалось определить версию ОС"
     fi
     
     # Проверка CPU
@@ -1279,7 +1278,7 @@ install_xrm_director() {
             echo "ragflow-sdk успешно установлен"
         fi
     fi
-    
+
     # Скачивание initial backup только в директорию initial
     echo "Загрузка initial backup..."
     if ! wget --no-check-certificate -O "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" "${INITIAL_BACKUP_URL}" || [ ! -s "${INITIAL_BACKUP_DIR}/initial_backup.tar.gz" ]; then
@@ -2526,4 +2525,5 @@ while true; do
             sleep 2
             ;;
     esac
+done
 done
