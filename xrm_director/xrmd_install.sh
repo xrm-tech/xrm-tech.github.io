@@ -770,7 +770,7 @@ check_docker_before_install() {
             fi
             
             log_message "INFO" "Docker успешно установлен."
-            print_color "green" "✅ Docker успешно установлен. Продолжаем установку RagFlow."
+            print_color "green" "✅ Docker успешно установлен. Продолжаем установку XRM Director."
         else
             log_message "INFO" "Установка Docker отклонена пользователем. Установка RagFlow прервана."
             print_color "yellow" "⚠️ Для установки RagFlow необходим Docker. Установка прервана."
@@ -801,7 +801,7 @@ check_docker_before_install() {
         fi
         
         # Docker установлен и запущен
-        log_message "INFO" "Docker установлен и запущен. Продолжаем установку RagFlow."
+        log_message "INFO" "Docker установлен и запущен. Продолжаем установку XRM Director."
         print_color "green" "✅ Docker установлен и запущен."
     fi
     
