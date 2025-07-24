@@ -911,21 +911,21 @@ check_system_requirements() {
         local os_major=$(echo "$os_version_num" | cut -d. -f1)
         
         if [ -n "$os_major" ] && [ "$os_major" -ge 8 ] 2>/dev/null; then
-            echo "4. ОС: $os_name $os_version_str - OK"
+            echo "✅ ОС: $os_name $os_version_str - OK"
         else
-            echo "4. ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ"
+            echo "ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ"
             echo "   Для нормального функционирования рекомендуем RED OS версии 8.0 или выше."
         fi
     else
-        echo "4. ОС: Не удалось определить версию ОС"
+        echo "ОС: Не удалось определить версию ОС"
     fi
     
     # Проверка Docker, если установлен
     if command -v docker &>/dev/null; then
         local docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
-        echo "5. Docker: $docker_version (минимум: $DOCKER_MIN_VERSION) - $(check_version "$docker_version" "$DOCKER_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
+        echo "✅ Docker: $docker_version (минимум: $DOCKER_MIN_VERSION) - $(check_version "$docker_version" "$DOCKER_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
     else
-        echo "5. Docker: Не установлен"
+        echo "Docker: Не установлен"
     fi
     
     # Проверка Docker Compose, если установлен
@@ -933,9 +933,9 @@ check_system_requirements() {
         # Упрощенное получение версии Docker Compose
         local compose_version=$(docker compose version | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+")
         
-        echo "6. Docker Compose: $compose_version (минимум: $DOCKER_COMPOSE_MIN_VERSION) - $(check_version "$compose_version" "$DOCKER_COMPOSE_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
+        echo "✅ Docker Compose: $compose_version (минимум: $DOCKER_COMPOSE_MIN_VERSION) - $(check_version "$compose_version" "$DOCKER_COMPOSE_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
     else
-        echo "6. Docker Compose: Не установлен"
+        echo "Docker Compose: Не установлен"
     fi
     
     # Проверка Python, если установлен
@@ -946,15 +946,15 @@ check_system_requirements() {
         
         # Проверка совместимости версии Python для ragflow-sdk
         if [ "$python_major" -eq 3 ] && [ "$python_minor" -ge 10 ] && [ "$python_minor" -le 13 ]; then
-            echo "7. Python: $python_version - OK (совместим с ragflow-sdk)"
+            echo "✅ Python: $python_version - OK (совместим с ragflow-sdk)"
         else
-            echo "7. Python: $python_version - ПРЕДУПРЕЖДЕНИЕ"
+            echo "Python: $python_version - ПРЕДУПРЕЖДЕНИЕ"
             echo "   Для работы с утилитой \"Менеджер по работе с агентами XRM Director\""
             echo "   требуется ragflow-sdk, для его установки рекомендуем установить python версии >3.10 - <3.13"
             echo "   например 3.11.9.\""
         fi
     else
-        echo "7. Python: Не установлен"
+        echo "Python: Не установлен"
         echo "   Для работы с утилитой \"Менеджер по работе с агентами XRM Director\" рекомендуется"
         echo "   установить Python версии 3.10-3.13 (например 3.11.9) и ragflow-sdk\""
     fi
