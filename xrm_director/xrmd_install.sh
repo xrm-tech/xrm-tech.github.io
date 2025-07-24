@@ -1278,6 +1278,19 @@ install_xrm_director() {
     
     # Создание директорий для резервных копий
     mkdir -p "${INITIAL_BACKUP_DIR}" "${USER_BACKUP_DIR}"
+
+     # Создание директории utils и скачивание файла agent manager
+    echo "Создание директории для утилит и скачивание xrmd_agent_manager.py..."
+    mkdir -p "/opt/xrm-director/utils"
+    if ! curl -sSf https://files.x-rm.ru/xrm_director/xrmd_agent_manager.py -o "/opt/xrm-director/utils/xrmd_agent_manager.py"; then
+        log_message "WARNING" "Не удалось скачать файл xrmd_agent_manager.py"
+        echo "Предупреждение: Не удалось скачать файл xrmd_agent_manager.py"
+    else
+        log_message "INFO" "Файл xrmd_agent_manager.py успешно скачан в /opt/xrm-director/utils/"
+        echo "Файл xrmd_agent_manager.py успешно скачан в /opt/xrm-director/utils/"
+        # Установка прав на выполнение для скрипта
+        chmod +x "/opt/xrm-director/utils/xrmd_agent_manager.py"
+    fi
     
     # Установка pip и ragflow-sdk
     echo "Установка pip..."
@@ -2402,7 +2415,7 @@ manage_backups() {
 backup_restore_menu() {
     clear
     echo "======================================================"
-    print_color "blue" "     🛠️  Резервное копирование / Восстановление 🛠️"
+    print_color "blue" "     🛠️  Резервное копирование / Восстановление RagFlow 🛠️"
     echo "======================================================"
     echo ""
     echo "1. Создать резервную копию всех томов"
