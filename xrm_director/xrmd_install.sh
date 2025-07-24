@@ -903,6 +903,27 @@ check_system_requirements() {
     local disk_gb=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
     log_message "INFO" "Свободное место на диске: $disk_gb ГБ (требуется: $REQUIRED_DISK_GB ГБ)"
     
+    # Вывод информации о CPU
+    if [ "$cpu_cores" -lt "$REQUIRED_CPU_CORES" ]; then
+        echo "❌ CPU: $cpu_cores ядер (требуется: $REQUIRED_CPU_CORES)"
+    else
+        echo "✅ CPU: $cpu_cores ядер (требуется: $REQUIRED_CPU_CORES)"
+    fi
+    
+    # Вывод информации о RAM
+    if [ "$ram_gb" -lt "$REQUIRED_RAM_GB" ]; then
+        echo "❌ RAM: ${ram_gb}GB (требуется: ${REQUIRED_RAM_GB}GB)"
+    else
+        echo "✅ RAM: ${ram_gb}GB (требуется: ${REQUIRED_RAM_GB}GB)"
+    fi
+    
+    # Вывод информации о дисковом пространстве
+    if [ "$disk_gb" -lt "$REQUIRED_DISK_GB" ]; then
+        echo "❌ Диск: ${disk_gb}GB свободно (требуется: ${REQUIRED_DISK_GB}GB)"
+    else
+        echo "✅ Диск: ${disk_gb}GB свободно (требуется: ${REQUIRED_DISK_GB}GB)"
+    fi
+    
     # Проверка версии ОС
     if [ -f /etc/os-release ]; then
         local os_name=$(grep '^NAME=' /etc/os-release | cut -d= -f2 | tr -d '"')
@@ -913,11 +934,11 @@ check_system_requirements() {
         if [ -n "$os_major" ] && [ "$os_major" -ge 8 ] 2>/dev/null; then
             echo "✅ ОС: $os_name $os_version_str - OK"
         else
-            echo "ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ"
+            echo "❌ ОС: $os_name $os_version_str - ПРЕДУПРЕЖДЕНИЕ:"
             echo "   Для нормального функционирования рекомендуем RED OS версии 8.0 или выше."
         fi
     else
-        echo "ОС: Не удалось определить версию ОС"
+        echo "❌ ОС: Не удалось определить версию ОС"
     fi
     
     # Проверка Docker, если установлен
@@ -925,7 +946,7 @@ check_system_requirements() {
         local docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
         echo "✅ Docker: $docker_version (минимум: $DOCKER_MIN_VERSION) - $(check_version "$docker_version" "$DOCKER_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
     else
-        echo "Docker: Не установлен"
+        echo "❌ Docker: Не установлен"
     fi
     
     # Проверка Docker Compose, если установлен
@@ -935,7 +956,7 @@ check_system_requirements() {
         
         echo "✅ Docker Compose: $compose_version (минимум: $DOCKER_COMPOSE_MIN_VERSION) - $(check_version "$compose_version" "$DOCKER_COMPOSE_MIN_VERSION" && echo "OK" || echo "НЕ СООТВЕТСТВУЕТ")"
     else
-        echo "Docker Compose: Не установлен"
+        echo "❌ Docker Compose: Не установлен"
     fi
     
     # Проверка Python, если установлен
@@ -948,7 +969,7 @@ check_system_requirements() {
         if [ "$python_major" -eq 3 ] && [ "$python_minor" -ge 10 ] && [ "$python_minor" -le 13 ]; then
             echo "✅ Python: $python_version - OK (совместим с ragflow-sdk)"
         else
-            echo "Python: $python_version - ПРЕДУПРЕЖДЕНИЕ"
+            echo "❌ Python: $python_version - ПРЕДУПРЕЖДЕНИЕ"
             echo "   Для работы с утилитой \"Менеджер по работе с агентами XRM Director\""
             echo "   требуется ragflow-sdk, для его установки рекомендуем установить python версии >3.10 - <3.13"
             echo "   например 3.11.9.\""
@@ -2522,5 +2543,4 @@ while true; do
             sleep 2
             ;;
     esac
-done
 done
