@@ -33,7 +33,7 @@ sqlite3.register_converter("DATETIME", convert_datetime)
 # Вы можете изменять эти параметры в соответствии с вашими потребностями
 # =====================================================================
 
-# Параметры подключения к RAGFlow
+# Параметры подключения к серверу
 API_KEY = "ragflow-ZjNTQxMjc0ZTE2ZTExZWZiYzQ3MDI0Mm"
 BASE_URL = "http://127.0.0.1:9380"
 
@@ -70,7 +70,7 @@ MENU_COMMANDS = ['menu', 'меню', '/menu', '/меню']  # Команды д�
 
 # Системные конфигурационные параметры
 CONFIG = {
-    # Параметры подключения к RAGFlow
+    # Параметры подключения к серверу
     'API_KEY': API_KEY,
     'BASE_URL': BASE_URL,
     
@@ -305,31 +305,31 @@ def cli_send_message(message, agent_id=None, agent_title=None, session_id=None, 
 def parse_arguments():
     """Парсинг аргументов командной строки"""
     parser = argparse.ArgumentParser(
-        description="Менеджер для работы с агентами RAGFlow",
+        description="Менеджер для работы с агентами XRM Director",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Примеры использования:
 
 # Показать список агентов
-python ragflow_menu.py --list-agents
+python xrmd_agent_manager.py --list-agents
 
 # Создать сеанс с агентом по ID
-python ragflow_menu.py --create-session --agent-id "agent123"
+python xrmd_agent_manager.py --create-session --agent-id "agent123"
 
 # Создать сеанс с агентом по названию
-python ragflow_menu.py --create-session --agent-title "GPT"
+python xrmd_agent_manager.py --create-session --agent-title "GPT"
 
 # Отправить сообщение агенту (создаст новый сеанс)
-python ragflow_menu.py --send "Привет, как дела?" --agent-title "GPT"
+python xrmd_agent_manager.py --send "Привет, как дела?" --agent-title "GPT"
 
 # Отправить сложную строку лога (используйте одинарные кавычки в PowerShell)
-python ragflow_menu.py --send 'ERROR 2024-07-12 11:15:26,987 config get 148 FATAL: no pg_hba.conf entry for host "10.1.97.70", user "udsdbadm", database "udsdb", SSL on' --agent-title "api_llm_agent" --new-session
+python xrmd_agent_manager.py --send 'ERROR 2024-07-12 11:15:26,987 config get 148 FATAL: no pg_hba.conf entry for host "10.1.97.70", user "udsdbadm", database "udsdb", SSL on' --agent-title "api_llm_agent" --new-session
 
 # Отправить сообщение в существующий сеанс
-python ragflow_menu.py --send "Что такое Python?" --agent-id "agent123" --session-id "session456"
+python xrmd_agent_manager.py --send "Что такое Python?" --agent-id "agent123" --session-id "session456"
 
 # Отправить сообщение с принудительным созданием нового сеанса
-python ragflow_menu.py --send "Новый вопрос" --agent-title "GPT" --new-session
+python xrmd_agent_manager.py --send "Новый вопрос" --agent-title "GPT" --new-session
         """
     )
     
@@ -363,7 +363,7 @@ python ragflow_menu.py --send "Новый вопрос" --agent-title "GPT" --ne
 
 class RAGFlowMenu:
     def __init__(self):
-        """Инициализация меню и подключения к RAGFlow"""
+        """Инициализация меню и подключения к серверу"""
         try:
             self.rag_object = RAGFlow(api_key=CONFIG['API_KEY'], base_url=CONFIG['BASE_URL'])
             self.current_agent = None
@@ -374,7 +374,7 @@ class RAGFlowMenu:
             self._test_connection()
             
         except Exception as e:
-            print(f"Ошибка при инициализации RAGFlow: {e}")
+            print(f"Ошибка при инициализации: {e}")
             print("Проверьте настройки API_KEY и BASE_URL")
             self.rag_object = None
             self.current_agent = None
@@ -382,18 +382,18 @@ class RAGFlowMenu:
             self.log_processor = None
     
     def _test_connection(self):
-        """Тестирование подключения к RAGFlow API"""
+        """Тестирование подключения к серверу API"""
         try:
             # Пытаемся получить список агентов для проверки соединения
             test_agents = self.rag_object.list_agents(page=1, page_size=1)
-            print("✓ Подключение к RAGFlow API успешно установлено")
+            print("✓ Подключение к серверу API успешно установлено")
             return True
         except Exception as e:
             error_msg = str(e)
             if "Expecting value" in error_msg:
                 print("✗ Ошибка: Сервер вернул некорректный JSON. Проверьте BASE_URL.")
             elif "Connection" in error_msg or "timeout" in error_msg.lower():
-                print("✗ Ошибка: Не удается подключиться к серверу RAGFlow.")
+                print("✗ Ошибка: Не удается подключиться к серверу.")
             elif "401" in error_msg or "Unauthorized" in error_msg:
                 print("✗ Ошибка: Неверный API_KEY.")
             else:
@@ -407,7 +407,7 @@ class RAGFlowMenu:
     def select_agent(self) -> Optional[object]:
         """Выбор агента из списка"""
         if not self.rag_object:
-            print("Ошибка: нет подключения к RAGFlow API")
+            print("Ошибка: нет подключения к серверу API")
             return None
             
         try:
@@ -442,7 +442,7 @@ class RAGFlowMenu:
         except Exception as e:
             error_msg = str(e)
             if "Expecting value" in error_msg:
-                print("Ошибка: Сервер RAGFlow вернул некорректный ответ")
+                print("Ошибка: Сервер вернул некорректный ответ")
             else:
                 print(f"Ошибка при получении списка агентов: {error_msg}")
             return None
@@ -786,9 +786,9 @@ class RAGFlowMenu:
                 # Обрабатываем ошибки API соединения
                 error_msg = str(api_error)
                 if "Expecting value" in error_msg:
-                    return "Ошибка подключения к API RAGFlow. Проверьте:\n1. Правильность BASE_URL\n2. Доступность сервера\n3. Корректность API_KEY"
+                    return "Ошибка подключения к API. Проверьте:\n1. Правильность BASE_URL\n2. Доступность сервера\n3. Корректность API_KEY"
                 elif "Connection" in error_msg or "timeout" in error_msg.lower():
-                    return "Сервер RAGFlow недоступен. Проверьте сетевое подключение."
+                    return "Сервер API недоступен. Проверьте сетевое подключение."
                 else:
                     return f"Ошибка API: {error_msg}"
             
@@ -827,7 +827,7 @@ class RAGFlowMenu:
         except Exception as e:
             error_msg = str(e)
             if "Expecting value" in error_msg:
-                return "Ошибка парсинга JSON ответа от сервера RAGFlow"
+                return "Ошибка парсинга JSON ответа от сервера"
             else:
                 return f"Ошибка при проверке активных сеансов: {error_msg}"
 
@@ -870,7 +870,7 @@ class RAGFlowMenu:
             
             # Проверяем соединение с API
             if not self.rag_object:
-                print("❌ НЕТ ПОДКЛЮЧЕНИЯ К RAGFlow API")
+                print("❌ НЕТ ПОДКЛЮЧЕНИЯ К СЕРВЕРУ API")
                 print("Проверьте настройки API_KEY и BASE_URL в файле")
                 print(CONFIG['MENU_SEPARATOR'])
             else:
@@ -894,7 +894,7 @@ class RAGFlowMenu:
                 
                 # Проверяем доступность API для операций, требующих соединения
                 if choice in ["1", "2", "3", "4", "5", "6"] and not self.rag_object:
-                    print("\nОшибка: Нет подключения к RAGFlow API. Исправьте настройки подключения.")
+                    print("\nОшибка: Нет подключения к серверу API. Исправьте настройки подключения.")
                     input(f"\n{CONFIG['MESSAGES']['press_enter']}")
                     continue
                 
@@ -1822,7 +1822,7 @@ class LogProcessor:
 
 
 def main():
-    """Основная функция для запуска меню RAGFlow"""
+    """Основная функция для запуска меню"""
     try:
         # Парсинг аргументов командной строки
         args = parse_arguments()
