@@ -1,0 +1,260 @@
+KNOWLEDGE BASE	ERROR
+ERROR ERROR 3 on service "Astra\demo-vdi-as-cl1" for user " " with transport "RDP" (ip: )	YES
+ERROR ERROR 3 on service "Debian Terminal Server\rds000000" for user " " with transport "RDP" (ip: )	YES
+ERROR ERROR 1 on service "Astra\demo-vdi-as-cl1" for user " " with transport "RDP" (ip: )	YES
+ERROR ERROR 1 on service "Astra\demo-vdi-as-cl1" for user " " with transport "Spice" (ip: )	YES
+ERROR ERROR 1 on service "Windows10\demo-vdi-w-cl1" for user " " with transport "RDP" (ip: )	YES
+ERROR ERROR 3 on service "Astra\demo-vdi-as-cl0" for user " " with transport "RDP" (ip: )	YES
+ERROR ERROR 3 on service "Softline\ :1" for user " " with transport "RemoteApp Chrome" (ip: )	YES
+ERROR ERROR 3 on service "Softline\ :3" for user " " with transport "RemoteApp Chrome" (ip: )	YES
+ERROR ERROR 3 on service "LenENergo\rds000004" for user " " with transport "RDP" (ip: )	YES
+ERROR ERROR 3 on service "Windows Terminal Server\rds000004" for user " " with transport "HTML5 RDP" (ip: )	YES
+ERROR config get 148 FATAL: no pg_hba.conf entry for host " ", user " ", database "udsdb", SSL on	YES
+ERROR config set 229 Exception	YES
+ERROR config get 148 relation "uds_configuration" does not exist	YES
+WARNING log log_response 224 Forbidden (CSRF token missing or incorrect.): /uds/page/login	YES
+ERROR views guacamole 64 Invalid token vGI0xxYLoth5ZXL8OUkU8ktOAE8mj_d0CHGOvdxTni4Y1i55 from	YES
+ERROR reports put 144 Generating report	YES
+ERROR __init__ dispatch 211 Error processing request	YES
+ERROR log log_response 224 Internal Server Error: /uds/rest/permissions/servicespools/26e13d25-6ff4-5e72-be14-9c965e827c95/groups/add/	YES
+INFO authentication checkLogin 156 Invalid form received	YES
+ERROR ActiveDirectory authenticate 349 Exception at authenticate	YES
+ldap.SERVER_DOWN: {'result': -1, 'desc': "Can't contact LDAP server", 'errno': 110, 'ctrls': [], 'info': 'Connection timed out'}	YES
+ldap.SERVER_DOWN: {'result': -1, 'desc': "Can't contact LDAP server", 'errno': 107, 'ctrls': [], 'info': 'Transport endpoint is not connected'}	YES
+uds.core.util.ldaputil.LDAPError: Не удаётся связаться с сервером LDAP: {'result': -1, 'desc': "Can't contact LDAP server", 'errno': 107, 'ctrls': [], 'info': 'Transport endpoint is not connected'}	YES
+ERROR users_groups getItems 145 En users	YES
+uds.core.module.Module.ValidationException: Must use HOST:PORT in Tunnel Server Field	YES
+ERROR log log_response 224 Internal Server Error: /uds/rest/transports	YES
+ERROR opchecker setError 67 Got error on processor: Fault reason is "Operation Failed". Fault detail is "[Cannot run VM without at least one bootable disk.	YES
+ERROR opchecker setError 67 Got error on processor: Machine not found	YES
+ERROR modern mfa 264 MFA error: Неправильный код	YES
+INFO services enableService 463 Number of service reached MAX for service pool "Fa8965077-91c9-51f9-ac88-ab496de6a639"	YES
+ERROR opchecker setError 67 Got error on processor: Not enough free space available: (Needs at least 32 GB and there is only 30.0 GB	YES
+ERROR services enableService 469 Error	YES
+ERROR log log_response 224 Internal Server Error: /uds/rest/transports/094f0f66-534f-58d3-8dfa-90b097f2b082	YES
+ERROR processors processParameters 141 parsing application/json: Expecting value: line 1 column 1 (char 0)	YES
+ERROR log log_response 224 Internal Server Error: /uds/rest/auth/login	YES
+ERROR config get 148 could not connect to server: Connection refused	YES
+ERROR log log_response 224 Internal Server Error: /uds/page/error/17	YES
+ERROR config get 148 could not connect to server: No route to host	YES
+ERROR 2024-08-30 09:38:20,084 delayed_task_runner executeOneDelayedTask 137 Obtainint one task for execution Traceback (most recent call last)	YES
+AD|sm|10.1.244.20|Linux|Access denied (user not allowed by UDS)|Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36	NO
+AD|spitsa|10.1.244.60|Linux|Invalid password|Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36	NO
+AD|root|10.1.244.158|Windows|Invalid user|Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36	NO
+ad|root|10.1.244.72|Windows|Logged in|Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 YaBrowser/24.6.0.0 Safari/537.36	NO
+INFO READY on service "Windows Terminal Server\rds000002" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Windows10\demo-vdi-w-cl0" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Astra\demo-vdi-as-cl1" for user " " with transport "Spice" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000002" for user " " with transport "RDP HTML5" (ip: )	NO
+INFO READY on service "Debian Terminal Server\rds000000" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Debian Terminal Server\rds000001" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "deb-fire-test\ :1" for user " " with transport "deb-fire" (ip: )	NO
+INFO READY on service "deb-libre-test\ :1" for user " " with transport "deb-libre" (ip: )	NO
+INFO READY on service "Debian Server\ :2" for user " " with transport "X2Go App Firefox" (ip: )	NO
+INFO READY on service "Debian Server\ :3" for user " " with transport "X2Go App Firefox" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Astra\demo-vdi-as-cl0" for user " " with transport "Spice" (ip: )	NO
+INFO READY on service "Windows10\demo-vdi-w-cl2" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Windows10\demo-vdi-w-cl2" for user " " with transport "HTML5 RDP" (ip: )	NO
+INFO READY on service "Windows10\demo-vdi-w-cl2" for user " " with transport "Spice" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "RemoteApp HTML5 Chrome" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "RemoteApp Chrome" (ip: )	NO
+INFO READY on service "LenEnergo\ :1" for user " " with transport "LenEnX2go" (ip: )	NO
+INFO READY on service "LenEnergo\ :1" for user " " with transport "LenEnX2go Firefox" (ip: )	NO
+INFO READY on service "Debian Server\ :1" for user " " with transport "X2go" (ip: )	NO
+INFO READY on service "Debian Server\ :1" for user " " with transport "X2go Firefox" (ip: )	NO
+INFO READY on service "Loudplay\ :1" for user " " with transport "Loudplay" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000002" for user " " with transport "RemoteApp Chrome" (ip: )	NO
+INFO READY on service "Debian Terminal Server\rds000003" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Debian Server\ :2" for user " " with transport "X2go" (ip: )	NO
+INFO READY on service "Softline\ :1" for user " " with transport "RemoteApp Chrome" (ip: )	NO
+INFO READY on service "Softline\ :2" for user " " with transport "RemoteApp Chrome" (ip: )	NO
+INFO READY on service "Softline\ :3" for user " " with transport "RemoteApp Chrome" (ip: )	NO
+INFO READY on service "Softline\ :2" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Softline\ :3" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000002" for user " " with transport "HTML5 RDP" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "HTML5 RDP" (ip: )	NO
+INFO READY on service "Debian Server\ :3" for user " " with transport "X2go" (ip: )	NO
+INFO READY on service "LenENergo\rds000004" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000004" for user " " with transport "HTML5 RDP" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000004" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000004" for user " " with transport "RemoteApp Chrome" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000004" for user " " with transport "RemoteApp HTML5 Chrome" (ip: )	NO
+INFO READY on service "Debian Terminal Server\rds000005" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Debian Server\ :4" for user " " with transport "X2go" (ip: )	NO
+INFO READY on service "Debian Server\ :4" for user " " with transport "X2go Firefox" (ip: )	NO
+INFO READY on service "Windows10\demo-vdi-w-cl0" for user " " with transport "Spice" (ip: )	NO
+INFO READY on service "Windows10\demo-vdi-w-cl0" for user " " with transport "HTML5 RDP" (ip: )	NO
+INFO READY on service "Windows10\demo-vdi-w-cl0" for user " " with transport "HTML5 RDP 2" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000004" for user " " with transport "RDP Tunneled" (ip: )	NO
+INFO READY on service "gubanov-Alt\gubanovALT-cl-0" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "gubanov-Alt\gubanovALT-cl-0" for user " " with transport "Spice-vdispo" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "HTML RA TEST" (ip: )	NO
+INFO READY on service "Debian Terminal Server\rds000002" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Debian Terminal Server\rds000006" for user " " with transport "RDP" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "test" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000004" for user " " with transport "test" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "test RDP" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "test RA not html" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "html5 wordpad" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000000" for user " " with transport "html5 chrome" (ip: )	NO
+INFO READY on service "test Windows Terminal Server\rds000007" for user " " with transport "html5 wordpad" (ip: )	NO
+INFO READY on service "Windows Terminal Server\rds000004" for user " " with transport "html5 chrome" (ip: )	NO
+INFO READY on service "test Windows Terminal Server\rds000008" for user " " with transport "html5 wordpad" (ip: )	NO
+FATAL: no pg_hba.conf entry for host " ", user " ", database "udsdb", SSL off	NO
+Traceback (most recent call last):	NO
+psycopg2.OperationalError: FATAL: no pg_hba.conf entry for host " ", user " ", database "udsdb", SSL on	NO
+The above exception was the direct cause of the following exception:	NO
+django.db.utils.OperationalError: FATAL: no pg_hba.conf entry for host " ", user " ", database "udsdb", SSL on	NO
+INFO config get 143 Error accessing db config UDS.restrainCount	NO
+INFO config get 143 Error accessing db config UDS.statsDuration	NO
+INFO config get 143 Error accessing db config UDS.statsAccumFrequency	NO
+INFO config get 143 Error accessing db config UDS.statsAccumMaxChunkTime	NO
+INFO config get 143 Error accessing db config UDS.disallowGlobalLogin	NO
+INFO config get 143 Error accessing db config UDS.Notify on new publication	NO
+INFO config get 143 Error accessing db config UDS.New Max restriction	NO
+INFO config get 143 Error accessing db config Security.Max Audit Logs duration	NO
+INFO config get 143 Error accessing db config Security.Trusted Hosts	NO
+INFO config get 143 Error accessing db config Security.honorClientNotifyIP	NO
+INFO config get 143 Error accessing db config Security.Behind a proxy	NO
+INFO config get 143 Error accessing db config Security.Exclusive Logout	NO
+INFO config get 143 Error accessing db config Security.Block actor failures	NO
+INFO config get 143 Error accessing db config Security.Session timeout for Admin	NO
+INFO config get 143 Error accessing db config Security.Session timeout for User	NO
+INFO config get 143 Error accessing db config UDS.Page reload Time	NO
+INFO config get 143 Error accessing db config UDS.Calendar access denied text	NO
+INFO config get 143 Error accessing db config Security.Convert username to lowercase	NO
+INFO config get 143 Error accessing db config UDS.UDS ID	NO
+INFO config get 143 Error accessing db config Custom.Site name	NO
+INFO config get 143 Error accessing db config Custom.Site copyright info	NO
+INFO config get 143 Error accessing db config Custom.Site copyright link	NO
+INFO config get 143 Error accessing db config Custom.Logo name	NO
+INFO config get 143 Error accessing db config Custom.CSS	NO
+INFO config get 143 Error accessing db config Custom.Site information	NO
+INFO config get 143 Error accessing db config Custom.Show Filter on Top	NO
+INFO config get 143 Error accessing db config Custom.Min. Services to show filter	NO
+INFO config get 143 Error accessing db config UDS.Experimental Features	NO
+INFO config get 143 Error accessing db config Admin.List page size	NO
+INFO config get 143 Error accessing db config Admin.Trusted Hosts for Admin	NO
+INFO config get 143 Error accessing db config Admin.Enable VNC for user services	NO
+INFO config get 143 Error accessing db config SAML.Organization Name	NO
+INFO config get 143 Error accessing db config SAML.Org. Display Name	NO
+INFO config get 143 Error accessing db config SAML.Organization URL	NO
+INFO config get 143 Error accessing db config SAML.IDP Metadata cache	NO
+INFO config get 143 Error accessing db config SAML.Global logout on exit	NO
+INFO config get 143 Error accessing db config Security.Master Key	NO
+INFO config set 231 Could not save configuration key PCoIP.downloadUrl	NO
+INFO taskManager handle 147 Starting task manager.	NO
+INFO __init__ initialize 252 Initializing REST Handlers	NO
+INFO taskManager handle 120 Running task manager command	NO
+INFO config get 143 Error accessing db config UDS.sessionExpireTime	NO
+psycopg2.errors.UndefinedTable: relation "uds_configuration" does not exist	NO
+django.db.utils.ProgrammingError: relation "uds_configuration" does not exist	NO
+INFO config get 143 Error accessing db config UDS.cacheCheckDelay	NO
+INFO config get 143 Error accessing db config UDS.delayedTasksThreads	NO
+INFO config get 143 Error accessing db config UDS.schedulerThreads	NO
+INFO config get 143 Error accessing db config UDS.cleanupCheck	NO
+INFO config get 143 Error accessing db config UDS.keepInfoTime	NO
+INFO config get 143 Error accessing db config UDS.maxPreparingServices	NO
+INFO config get 143 Error accessing db config UDS.maxRemovingServices	NO
+INFO config get 143 Error accessing db config UDS.ignoreLimits	NO
+INFO config get 143 Error accessing db config UDS.userServiceCleanNumber	NO
+INFO config get 143 Error accessing db config UDS.removalCheck	NO
+INFO config get 143 Error accessing db config Security.superUser	NO
+INFO config get 143 Error accessing db config Security.rootPass	NO
+INFO config get 143 Error accessing db config Security.allowRootWebAccess	NO
+INFO config get 143 Error accessing db config Security.Enable Enhanced Security	NO
+INFO config get 143 Error accessing db config Security.Enforce Zero-Trust Mode	NO
+INFO config get 143 Error accessing db config UDS.checkUnusedTime	NO
+INFO config get 143 Error accessing db config UDS.checkUnusedDelay	NO
+INFO config get 143 Error accessing db config Security.maxLoginTries	NO
+INFO config get 143 Error accessing db config Security.loginBlockTime	NO
+INFO config get 143 Error accessing db config Security.Block ip on login failure	NO
+INFO config get 143 Error accessing db config UDS.autorunService	NO
+INFO config get 143 Error accessing db config UDS.redirectToHttps	NO
+INFO config get 143 Error accessing db config UDS.Redirect to tag on logout	NO
+INFO config get 143 Error accessing db config UDS.maxInitTime	NO
+INFO config get 143 Error accessing db config UDS.maxRemovalTime	NO
+INFO config get 143 Error accessing db config UDS.maxLogPerElement	NO
+INFO config get 143 Error accessing db config UDS.restrainTime	NO
+INFO task registerScheduledTasks 98 Registering sheduled tasks	NO
+INFO task run 118 Starting 3 schedulers and 4 task executors	NO
+INFO task sigTerm 90 Caught term signal, finishing task manager	NO
+INFO user_service createCacheFor 203 Creating a new cache element at level 1 for publication Publication Astra, rev 1, state Valid	NO
+INFO user_service createAssignedFor 229 Creating a new assigned element for user User gubanov@demo.vdi (id:4) from auth AD por publication Publication Astra, rev 1, state Valid	NO
+INFO user_service remove 360 Removing userService <UserService: User service Astra\demo-vdi-as-cl0, unique_id , cache_level 1, user None, name demo-vdi-as-cl0, state Removing:In preparation>	NO
+INFO user_service createCacheFor 203 Creating a new cache element at level 1 for publication Publication Windows10, rev 1, state Valid	NO
+INFO user_service remove 360 Removing userService <UserService: User service Astra\demo-vdi-as-cl1, unique_id , cache_level 0, user User gubanov@demo.vdi (id:4) from auth AD, name demo-vdi-as-cl1, state Removing:In preparation>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows10\demo-vdi-w-cl0, unique_id , cache_level 1, user None, name demo-vdi-w-cl0, state Removing:In preparation>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Astra (removed)\demo-vdi-as-cl2, unique_id , cache_level 1, user None, name demo-vdi-as-cl2, state Removing:In preparation>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows10 (removed)\demo-vdi-w-cl1, unique_id , cache_level 1, user None, name demo-vdi-w-cl1, state Removing:In preparation>	NO
+INFO user_service createCacheFor 203 Creating a new cache element at level 1 for publication Publication Astra, rev 2, state Valid	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User gubanov@demo.vdi (id:4) from auth AD	NO
+INFO user_service createAssignedFor 229 Creating a new assigned element for user User gubanov@demo.vdi (id:4) from auth AD por publication Publication Windows10, rev 1, state Valid	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows10\demo-vdi-w-cl1, unique_id , cache_level 0, user User gubanov@demo.vdi (id:4) from auth AD, name demo-vdi-w-cl1, state Removing:In preparation>	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User user (id:5) from auth int	NO
+INFO user_service remove 360 Removing userService <UserService: User service LenEnergo (removed)\ :1, unique_id :1, cache_level 0, user User user (id:5) from auth int, name :1, state Removing:Valid>	NO
+ValueError: year 0 is out of range	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User spitsa@demo.vdi (id:6) from auth AD	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User sm (id:3) from auth int	NO
+INFO config put 62 Updating config value Security.Session timeout for User by root	NO
+INFO user_service remove 360 Removing userService <UserService: User service Astra\demo-vdi-as-cl0, unique_id , cache_level 0, user None, name demo-vdi-as-cl0, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows Terminal Server\rds000000, unique_id uds00000000, cache_level 0, user None, name rds000000, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows10\demo-vdi-w-cl2, unique_id , cache_level 0, user None, name demo-vdi-w-cl2, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Softline\ :2, unique_id :2, cache_level 0, user None, name :2, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Debian Server\ :3, unique_id :3, cache_level 0, user None, name :3, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service LenENergo\rds000004, unique_id uds00000004, cache_level 0, user None, name rds000004, state Removing:Valid>	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User gubanov@demo.vdi (id:8) from auth AD	NO
+INFO user_service remove 360 Removing userService <UserService: User service Softline (removed)\ :1, unique_id :1, cache_level 0, user User sm (id:3) from auth int, name :1, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Softline (removed)\ :3, unique_id :3, cache_level 0, user User spitsa@demo.vdi (id:6) from auth AD, name :3, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Loudplay\ :1, unique_id :1, cache_level 0, user User user (id:5) from auth int, name :1, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows Terminal Server\rds000002, unique_id uds00000002, cache_level 0, user User gubanov@demo.vdi (id:9) from auth AD, name rds000002, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Debian Server\ :1, unique_id :1, cache_level 0, user User user (id:5) from auth int, name :1, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Debian Server\ :2, unique_id :2, cache_level 0, user User sm (id:3) from auth int, name :2, state Removing:Valid>	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User gubanov@demo.vdi (id:9) from auth AD	NO
+During handling of the above exception, another exception occurred:	NO
+raise LDAPError(_('Can\'t contact LDAP server') + ': {}'.format(e))	NO
+uds.core.util.ldaputil.LDAPError: Не удаётся связаться с сервером LDAP: {'result': -1, 'desc': "Can't contact LDAP server", 'errno': 110, 'ctrls': [], 'info': 'Connection timed out'}	NO
+raise transports.Transport.ValidationException(	NO
+INFO config put 62 Updating config value Admin.Enable VNC for user services by root	NO
+TypeError: unsupported operand type(s) for +: 'NoneType' and 'NoneType'	NO
+ERROR log log_response 224 Internal Server Error: /uds/rest/gui/callback/ovFillResourcesFromCluster	NO
+INFO user_service createCacheFor 203 Creating a new cache element at level 1 for publication Publication AltLinux10.2, rev 1, state Valid	NO
+Use the 'Run Once' command to select a different boot option and rerun the VM.]". HTTP response code is 409.	NO
+INFO user_service createCacheFor 203 Creating a new cache element at level 1 for publication Publication gubanov-Alt, rev 2, state Valid	NO
+INFO user_service remove 360 Removing userService <UserService: User service gubanov-Alt (removed)\gubanovALT-cl-0, unique_id , cache_level 0, user User vlad (id:2) from auth int, name gubanovALT-cl-0, state Removing:Valid>	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User user@demo.vdi (id:10) from auth AD	NO
+INFO user_service createAssignedFor 243 Creating a new assigned element for user User vlad (id:2) from auth int	NO
+INFO user_service createAssignedFor 229 Creating a new assigned element for user User spitsa@demo.vdi (id:6) from auth AD por publication Publication Windows10, rev 1, state Valid	NO
+raise InvalidServiceException(	NO
+uds.core.services.exceptions.InvalidServiceException: Недействительный сервис. В настоящий момент услуга недоступна. Пожалуйста, попробуйте позднее	NO
+raise InvalidServiceException(_('The requested service is restrained'))	NO
+uds.core.services.exceptions.InvalidServiceException: Запрашиваемая услуга ограничена	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows10\demo-vdi-w-cl0, unique_id , cache_level 0, user User gubanov@demo.vdi (id:9) from auth AD, name demo-vdi-w-cl0, state Removing:Valid>	NO
+INFO user_service remove 360 Removing userService <UserService: User service Windows10 (removed)\demo-vdi-w-cl4, unique_id , cache_level 1, user None, name demo-vdi-w-cl4, state Removing:In preparation>	NO
+INFO actor_v3 action 280 Unmanaged host request: {'type': 'managed', 'token': 'version': '3.6.0', 'id': [{'mac': ' ', 'ip': ' '}]},	NO
+uds.core.services.exceptions.InvalidServiceException: Сервис недоступен с этого устройства	NO
+raise JSONDecodeError("Expecting value", s, err.value) from None	NO
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)	NO
+INFO tunnel get 148 Ticket ignored: Does not exists	NO
+psycopg2.OperationalError: could not connect to server: Connection refused	NO
+django.db.utils.OperationalError: could not connect to server: Connection refused	NO
+AttributeError: 'SessionStore' object has no attribute '_session_cache'	NO
+File "/usr/local/lib/python3.9/dist-packages/django/core/handlers/exception.py", line 47, in inner	NO
+psycopg2.OperationalError: could not connect to server: No route to host	NO
+django.db.utils.OperationalError: could not connect to server: No route to host	NO
+login :Zverb gubanov demo-vdi-w-cl0 Windows10	NO
+logout :Zverb gubanov (idle: 600 vs 600) demo-vdi-w-cl0 Windows10	NO
+login :Zverb gubanov demo-vdi-as-cl0 Astra	NO
+login :Zverb gubanov demo-vdi-w-cl2 Windows10	NO
+logout :Zverb gubanov (idle: 600 vs 600) demo-vdi-w-cl2 Windows10	NO
+login :Zverb win demo-vdi-w-cl2 Windows10	NO
+logout :Zverb win (idle: 600 vs 600) demo-vdi-w-cl2 Windows10	NO
+login :DESKTOP-JOJ1933 gubanov demo-vdi-w-cl2 Windows10	NO
+logout :DESKTOP-JOJ1933 gubanov (idle: 600 vs 600) demo-vdi-w-cl2 Windows10	NO
+login :Zverb gubanov demo-vdi-as-cl1 Astra	NO
+login : gubanov demo-vdi-w-cl0 Windows10	NO
+logout : gubanov (idle: 600 vs 600) demo-vdi-w-cl0 Windows10	NO
+logout : gubanov demo-vdi-w-cl0 Windows10	NO
+logout :Zverb gubanov demo-vdi-as-cl1 Astra	NO
+logout :Zverb gubanov demo-vdi-w-cl0 Windows10	NO
