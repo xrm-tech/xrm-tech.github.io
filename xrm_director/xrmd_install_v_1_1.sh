@@ -1842,85 +1842,256 @@ remove_xrm_director() {
     
     echo "====== Удаление XRM Director ======"
     
-    # Проверяем наличие контейнеров ragflow и llm-server
-    local ragflow_containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow" || true)
-    local ollama_containers=$(docker ps -a --format '{{.Names}}' | grep "llm-server" || true)
+    # Быстрое удаление всего сразу (опционально)
+    echo ""
+    echo "⚠️  ВНИМАНИЕ! Вы можете выбрать один из вариантов:"
+    echo "   1. Удалить ВСЁ сразу (контейнеры, образы, тома, директории)"
+    echo "   2. Выборочное удаление (будет запрос на каждый компонент)"
+    echo ""
     
-    if [[ -z "$ragflow_containers" && -z "$ollama_containers" ]]; then
-        log_message "WARNING" "Контейнеры XRM Director не найдены"
-        echo "Контейнеры XRM Director не найдены."
+    if ask_yes_no "Хотите удалить ВСЁ сразу без дополнительных вопросов?"; then
+        echo ""
+        echo "🔥 Начинается полное удаление XRM Director..."
         
-        # Проверяем наличие образов для удаления
-        local ragflow_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "infiniflow/ragflow" || true)
-        local ollama_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "ollama/ollama" || true)
-        
-        if [[ -n "$ragflow_images" || -n "$ollama_images" ]]; then
-            echo "Найдены образы XRM Director для удаления:"
-            if [[ -n "$ragflow_images" ]]; then
-                echo "RAGFlow образы:"
-                echo "$ragflow_images"
-            fi
-            if [[ -n "$ollama_images" ]]; then
-                echo "Ollama образы:"
-                echo "$ollama_images"
-            fi
-            
-            # Исправление синтаксической ошибки: убираем лишние скобки
-            echo "Хотите удалить найденные образы? д/н"
-            if ask_yes_no "Хотите удалить найденные образы?"; then
-                # Удаление образов RAGFlow
-                if [[ -n "$ragflow_images" ]]; then
-                    echo "$ragflow_images" | while read -r image; do
-                        echo "Удаление образа: $image"
-                        if docker rmi -f "$image" 2>/dev/null; then
-                            echo "✅ Образ $image успешно удален"
-                        else
-                            echo "❌ Не удалось удалить образ $image"
-                        fi
-                    done
-                fi
-                
-                # Удаление образов lmm-server
-                if [[ -n "$ollama_images" ]]; then
-                    echo "$ollama_images" | while read -r image; do
-                        echo "Удаление образа: $image"
-                        if docker rmi -f "$image" 2>/dev/null; then
-                            echo "✅ Образ $image успешно удален"
-                        else
-                            echo "❌ Не удалось удалить образ $image"
-                        fi
-                    done
-                fi
-                
-                echo "Образы XRM Director удалены"
-            fi
+        # Остановка и удаление всех контейнеров
+        local all_containers=$(docker ps -a --format '{{.Names}}' | grep -E "(ragflow|xinference|llm-server)" || true)
+        if [[ -n "$all_containers" ]]; then
+            echo "Остановка всех контейнеров..."
+            docker ps -a --format '{{.Names}}' | grep -E "(ragflow|xinference|llm-server)" | xargs -r docker stop 2>/dev/null
+            echo "Удаление всех контейнеров..."
+            docker ps -a --format '{{.Names}}' | grep -E "(ragflow|xinference|llm-server)" | xargs -r docker rm 2>/dev/null
+            echo "✅ Все контейнеры удалены"
         fi
         
-        # Переход к опциональному удалению директорий (в конце функции)
+        # Удаление всех томов
+        local all_volumes=$(docker volume ls --format '{{.Name}}' | grep -E "(ragflow|xinference)" || true)
+        if [[ -n "$all_volumes" ]]; then
+            echo "Удаление всех томов..."
+            docker volume ls --format '{{.Name}}' | grep -E "(ragflow|xinference)" | xargs -r docker volume rm 2>/dev/null
+            echo "✅ Все тома удалены"
+        fi
+        
+        # Удаление всех образов
+        echo "Удаление всех образов..."
+        docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "(infiniflow/ragflow|ollama/ollama|xprobe/xinference)" | xargs -r docker rmi -f 2>/dev/null
+        echo "✅ Все образы удалены"
+        
+        # Удаление директории установки
+        if [ -d "$INSTALL_DIR" ]; then
+            echo "Удаление директории установки $INSTALL_DIR..."
+            rm -rf "$INSTALL_DIR"
+            echo "✅ Директория установки удалена"
+            log_message "INFO" "Директория установки $INSTALL_DIR удалена"
+        fi
+        
+        # Удаление директории резервных копий
+        if [ -d "$BACKUP_DIR" ]; then
+            echo "Удаление директории резервных копий $BACKUP_DIR..."
+            rm -rf "$BACKUP_DIR"
+            echo "✅ Директория резервных копий удалена"
+            log_message "INFO" "Директория резервных копий $BACKUP_DIR удалена"
+        fi
+        
+        log_message "INFO" "Полное удаление XRM Director завершено"
+        echo ""
+        echo "✅ XRM Director полностью удален!"
+        show_return_to_menu_message
+        return 0
     fi
     
-    # Опциональное удаление директорий (выполняется всегда)
+    # Выборочное удаление (существующий код)
     echo ""
-    echo "Опциональное удаление директорий:"
-    echo "  - \`$INSTALL_DIR\` удалить всю директорию"
-    echo "  - \`$BACKUP_DIR\` (резервные копии)"
-    echo ""
+    echo "Переход к выборочному удалению..."
     
-    # Проверка и удаление основной директории установки
-    if [ -d "$INSTALL_DIR" ]; then
-        echo "📁 Найдена директория установки: $INSTALL_DIR"
-        if ask_yes_no "Хотите удалить директорию установки?"; then
-            rm -rf "$INSTALL_DIR"
-            log_message "INFO" "Директория установки $INSTALL_DIR удалена"
-            echo "✅ Директория установки $INSTALL_DIR удалена"
+    # Проверяем наличие контейнеров двумя способами
+    local ragflow_containers=$(docker ps -a --format '{{.Names}}' | grep -E "(ragflow|xinference)" || true)
+    
+    # Прямая проверка наличия контейнера llm-server
+    local llm_server_exists=false
+    if docker inspect llm-server &>/dev/null; then
+        llm_server_exists=true
+    fi
+    
+    # Убираем пустые строки и пробелы
+    ragflow_containers=$(echo "$ragflow_containers" | grep -v '^$' | xargs)
+    
+    # Опциональное удаление контейнеров
+    if [[ -n "$ragflow_containers" ]]; then
+        echo ""
+        echo "Найдены контейнеры RAGFlow/Xinference:"
+        docker ps -a --format '{{.Names}}' | grep -E "(ragflow|xinference)" | while read -r container; do
+            echo "  - $container"
+        done
+        
+        if ask_yes_no "Хотите остановить и удалить эти контейнеры?"; then
+            echo "Остановка контейнеров RAGFlow/Xinference..."
+            docker ps -a --format '{{.Names}}' | grep -E "(ragflow|xinference)" | while read -r container; do
+                docker stop "$container" 2>/dev/null && echo "✅ Контейнер $container остановлен"
+            done
+            
+            echo "Удаление контейнеров RAGFlow/Xinference..."
+            docker ps -a --format '{{.Names}}' | grep -E "(ragflow|xinference)" | while read -r container; do
+                docker rm "$container" 2>/dev/null && echo "✅ Контейнер $container удален"
+            done
+            log_message "INFO" "Контейнеры RAGFlow/Xinference удалены"
         else
-            echo "ℹ️  Директория установки сохранена"
+            echo "ℹ️  Контейнеры RAGFlow/Xinference сохранены"
         fi
     else
-        echo "ℹ️  Директория установки $INSTALL_DIR не найдена"
+        echo "ℹ️  Контейнеры RAGFlow/Xinference не найдены"
     fi
     
+    # Обработка llm-server отдельно
+    if $llm_server_exists; then
+        echo ""
+        echo "Найден контейнер LLM-server:"
+        echo "  - llm-server"
+        
+        if ask_yes_no "Хотите остановить и удалить контейнер llm-server?"; then
+            echo "Остановка контейнера llm-server..."
+            docker stop llm-server 2>/dev/null && echo "✅ Контейнер llm-server остановлен"
+            
+            echo "Удаление контейнера llm-server..."
+            docker rm llm-server 2>/dev/null && echo "✅ Контейнер llm-server удален"
+            log_message "INFO" "Контейнер llm-server удален"
+        else
+            echo "ℹ️  Контейнер llm-server сохранен"
+        fi
+    else
+        echo "ℹ️  Контейнер llm-server не найден"
+    fi
+    
+    # Опциональное удаление томов
+    echo ""
+    local all_volumes=$(docker volume ls --format '{{.Name}}' | grep -E "(ragflow|xinference)" || true)
+    if [[ -n "$all_volumes" ]]; then
+        echo "Найдены Docker тома:"
+        echo "$all_volumes" | while read -r vol; do
+            echo "  - $vol"
+        done
+        
+        if ask_yes_no "Хотите удалить эти тома?"; then
+            echo "$all_volumes" | while read -r vol; do
+                if docker volume rm "$vol" 2>/dev/null; then
+                    echo "✅ Том $vol удален"
+                else
+                    echo "❌ Не удалось удалить том $vol (возможно, используется)"
+                fi
+            done
+            log_message "INFO" "Тома обработаны"
+        else
+            echo "ℹ️  Тома сохранены"
+        fi
+    else
+        echo "ℹ️  Docker тома не найдены"
+    fi
+    
+    # Опциональное удаление образов
+    echo ""
+    echo "Поиск Docker образов..."
+    
+    local ragflow_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "infiniflow/ragflow" || true)
+    if [[ -n "$ragflow_images" ]]; then
+        echo ""
+        echo "Найдены образы RAGFlow:"
+        echo "$ragflow_images" | while read -r image; do
+            echo "  - $image"
+        done
+        
+        if ask_yes_no "Хотите удалить образы RAGFlow?"; then
+            echo "$ragflow_images" | while read -r image; do
+                if docker rmi -f "$image" 2>/dev/null; then
+                    echo "✅ Образ $image удален"
+                else
+                    echo "❌ Не удалось удалить образ $image"
+                fi
+            done
+            log_message "INFO" "Образы RAGFlow обработаны"
+        else
+            echo "ℹ️  Образы RAGFlow сохранены"
+        fi
+    else
+        echo "ℹ️  Образы RAGFlow не найдены"
+    fi
+    
+    local ollama_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "ollama/ollama" || true)
+    if [[ -n "$ollama_images" ]]; then
+        echo ""
+        echo "Найдены образы Ollama:"
+        echo "$ollama_images" | while read -r image; do
+            echo "  - $image"
+        done
+        
+        if ask_yes_no "Хотите удалить образы Ollama?"; then
+            echo "$ollama_images" | while read -r image; do
+                if docker rmi -f "$image" 2>/dev/null; then
+                    echo "✅ Образ $image удален"
+                else
+                    echo "❌ Не удалось удалить образ $image"
+                fi
+            done
+            log_message "INFO" "Образы Ollama обработаны"
+        else
+            echo "ℹ️  Образы Ollama сохранены"
+        fi
+    else
+        echo "ℹ️  Образы Ollama не найдены"
+    fi
+    
+    local xinference_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "xprobe/xinference" || true)
+    if [[ -n "$xinference_images" ]]; then
+        echo ""
+        echo "Найдены образы Xinference:"
+        echo "$xinference_images" | while read -r image; do
+            echo "  - $image"
+        done
+        
+        if ask_yes_no "Хотите удалить образы Xinference?"; then
+            echo "$xinference_images" | while read -r image; do
+                if docker rmi -f "$image" 2>/dev/null; then
+                    echo "✅ Образ $image удален"
+                else
+                    echo "❌ Не удалось удалить образ $image"
+                fi
+            done
+            log_message "INFO" "Образы Xinference обработаны"
+        else
+            echo "ℹ️  Образы Xinference сохранены"
+        fi
+    else
+        echo "ℹ️  Образы Xinference не найдены"
+    fi
+    
+    # Удаление неиспользуемых образов (опционально)
+    if ask_yes_no "Хотите удалить все неиспользуемые Docker образы?"; then
+        echo "Очистка неиспользуемых образов..."
+        docker image prune -a -f
+        log_message "INFO" "Неиспользуемые образы очищены"
+        echo "✅ Неиспользуемые образы очищены"
+    fi
+    
+    # Опциональное удаление поддиректорий
+    echo ""
+    echo "Опциональное удаление поддиректорий в $INSTALL_DIR:"
+    
+    local subdirs=("docker" "history_data_agent" "kb" "utils")
+    for subdir in "${subdirs[@]}"; do
+        local full_path="$INSTALL_DIR/$subdir"
+        if [ -d "$full_path" ]; then
+            echo ""
+            echo "📁 Найдена директория: $full_path"
+            if ask_yes_no "Хотите удалить директорию $subdir?"; then
+                rm -rf "$full_path"
+                log_message "INFO" "Директория $full_path удалена"
+                echo "✅ Директория $full_path удалена"
+            else
+                echo "ℹ️  Директория $subdir сохранена"
+            fi
+        fi
+    done
+    
     # Проверка и удаление директории с резервными копиями
+    echo ""
     if [ -d "$BACKUP_DIR" ]; then
         echo "📁 Найдена директория резервных копий: $BACKUP_DIR"
         if ask_yes_no "Хотите удалить директорию с резервными копиями?"; then
@@ -1933,128 +2104,23 @@ remove_xrm_director() {
     else
         echo "ℹ️  Директория резервных копий $BACKUP_DIR не найдена"
     fi
-
-    # Если контейнеры не найдены, завершаем здесь
-    if [[ -z "$ragflow_containers" && -z "$ollama_containers" ]]; then
-        show_return_to_menu_message
-        return 0
-    fi
     
-    # Запрос подтверждения на удаление
-    echo "ВНИМАНИЕ! Это действие удалит все контейнеры XRM Director, тома, образы и файлы."
-    echo "Найденные компоненты:"
-    if [[ -n "$ragflow_containers" ]]; then
-        echo "- Контейнеры RAGFlow: $ragflow_containers"
-    fi
-    if [[ -n "$ollama_containers" ]]; then
-        echo "- Контейнер lmm-server: $ollama_containers"
-    fi
-    
-    if ! ask_yes_no "Хотите продолжить удаление?"; then
-        echo "Удаление отменено пользователем."
-        return 0
-    fi
-    
-    # Получение списка контейнеров с ragflow в имени
-    local containers=$(docker ps -a --format '{{.Names}}' | grep "ragflow" || true)
-    
-    # Сбор информации о томах, подключенных к контейнерам с ragflow
-    local volumes_to_remove=()
-    
-    if [[ -n "$containers" ]]; then
-        echo "Получение списка томов, подключенных к контейнерам XRM Director..."
-        for container in $containers; do
-            echo "Контейнер: $container"
-            
-            # Получение списка томов для контейнера
-            local container_volumes=$(docker inspect "$container" --format='{{range .Mounts}}{{.Name}}{{"\n"}}{{end}}' | grep -v "^$")
-            
-            if [ -n "$container_volumes" ]; then
-                echo "Тома, подключенные к контейнеру $container:"
-                echo "$container_volumes"
-                
-                # Добавляем тома в общий список для удаления
-                for vol in $container_volumes; do
-                    volumes_to_remove+=("$vol")
-                done
-            fi
-        done
-        
-        # Остановка контейнеров с ragflow
-        echo "Остановка контейнеров XRM Director..."
-        docker stop $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
-        
-        # Удаление контейнеров с ragflow
-        echo "Удаление контейнеров XRM Director..."
-        docker rm $(docker ps -a --format '{{.Names}}' | grep "ragflow") 2>/dev/null
-    fi
-    
-    # Остановка и удаление контейнера lmm-server, если он существует
-    if docker ps -a --format '{{.Names}}' | grep -q "lmm-server"; then
-        echo "Остановка и удаление контейнера lmm-server..."
-        docker stop lmm-server 2>/dev/null
-        docker rm lmm-server 2>/dev/null
-    fi
-    
-    # Удаление томов
-    if [ ${#volumes_to_remove[@]} -gt 0 ]; then
-        echo "Удаление томов, связанных с XRM Director..."
-        for vol in "${volumes_to_remove[@]}"; do
-            echo "Удаление тома: $vol"
-            docker volume rm "$vol" 2>/dev/null
-        done
-    fi
-    
-    # Удаление Docker образов
-    echo "Поиск и удаление Docker образов..."
-    
-    # Удаление образов RAGFlow
-    local ragflow_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "infiniflow/ragflow")
-    if [ -n "$ragflow_images" ]; then
-        echo "Найдены образы RAGFlow для удаления:"
-        echo "$ragflow_images"
-        echo "$ragflow_images" | while read -r image; do
-            echo "Удаление образа: $image"
-            if docker rmi -f "$image" 2>/dev/null; then
-                echo "✅ Образ $image успешно удален"
-            else
-                echo "❌ Не удалось удалить образ $image"
-            fi
-        done
-        log_message "INFO" "Образы RAGFlow обработаны"
-    else
-        echo "Образы RAGFlow не найдены"
-    fi
-    
-    # Удаление образов lmm-server
-    local ollama_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "ollama/ollama")
-    if [ -n "$ollama_images" ]; then
-        echo "Найдены образы lmm-server для удаления:"
-        echo "$ollama_images"
-        echo "$olloma_images" | while read -r image; do
-            echo "Удаление образа: $image"
-            if docker rmi -f "$image" 2>/dev/null; then
-                echo "✅ Образ $image успешно удален"
-            else
-                echo "❌ Не удалось удалить образ $image"
-            fi
-        done
-        log_message "INFO" "Образы lmm-server обработаны"
-    else
-        echo "Образы lmm-server не найдены"
-    fi
-    
-    # Удаление неиспользуемых образов (опционально)
-    if ask_yes_no "Хотите удалить все неиспользуемые Docker образы?"; then
-        echo "Очистка неиспользуемых образов..."
-        docker image prune -a -f
-        log_message "INFO" "Неиспользуемые образы очищены"
-        echo "Неиспользуемые образы очищены"
-    fi
-    
-    log_message "INFO" "XRM Director успешно удален"
+    # Проверка и удаление основной директории установки (если пуста или по желанию)
     echo ""
-    echo "✅ XRM Director и все связанные с ним компоненты успешно удалены!"
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "📁 Основная директория установки: $INSTALL_DIR"
+        if ask_yes_no "Хотите удалить всю директорию установки $INSTALL_DIR со всем содержимым?"; then
+            rm -rf "$INSTALL_DIR"
+            log_message "INFO" "Директория установки $INSTALL_DIR удалена"
+            echo "✅ Директория установки $INSTALL_DIR удалена"
+        else
+            echo "ℹ️  Директория установки сохранена"
+        fi
+    fi
+    
+    log_message "INFO" "Процесс удаления XRM Director завершен"
+    echo ""
+    echo "✅ Процесс удаления XRM Director завершен!"
     show_return_to_menu_message
 }
 
@@ -2358,7 +2424,7 @@ restore_backup() {
    
 # Функция для проверки доступности API RagFlow
 wait_for_ragflow() {
-    local max_attempts=30
+    local max_attempts=90
     local attempt=1
     local wait_seconds=10
     
