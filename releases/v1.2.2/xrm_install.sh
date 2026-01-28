@@ -65,7 +65,7 @@ check_docker() {
 	echo
 	echo "Для установки и работы XRM рекомендуем использовать версии:"
 	echo "- Docker 20.10.24 и выше."
-	echo "- Docker Compose 2.17.3 и выше."
+	echo "- Docker Compose 2.24.6 и выше."
 }
 
 docker_install() {
@@ -92,12 +92,10 @@ docker_install() {
 		echo -e "\e[32mУстанавливаем Docker\e[0m"
 		sudo apt install docker-ce -y
 
-		echo -e "\e[32mУстанавливаем Docker Compose 2.17.3\e[0m"
-		mkdir -p ~/.docker/cli-plugins/
-		curl -SL https://github.com/docker/compose/releases/download/v2.17.3/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
-
-		echo -e "\e[32mУстанавливаем правильные разрешения\e[0m"
-		chmod +x ~/.docker/cli-plugins/docker-compose
+		echo -e "\e[32mУстанавливаем Docker Compose 2.24.6\e[0m"
+		sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-$(uname -s)-$(uname -m)" \
+			-o /usr/local/bin/docker-compose
+		sudo chmod +x /usr/local/bin/docker-compose
 
 		echo -e "\e[32mDocker и Docker Compose установлены.\e[0m"
 	fi
@@ -109,6 +107,8 @@ xrm_install() {
 		echo -e "\e[32mДиректория xrm_${ver_path} существует.\e[0m"
   		echo -e "\e[32mРазвертывание сервисов веб-приложения XRM.\e[0m"
 		cd "./xrm_${ver_path}"
+		sudo chmod +x scripts/*.sh
+		
 		sudo docker compose up -d
 
 		# If docker compose up -d failed, try the second option under RED OS
@@ -152,6 +152,10 @@ xrm_install() {
 			sudo wget "https://files.x-rm.ru/releases/$ver_url/xrm-docker_${ver_path}.tar.gz"
 			echo -e "\e[32mИзвлечение архива xrm-docker_${ver_path}.tar.gz в директорию xrm_${ver_path}\e[0m"
 			sudo tar -zxvf "xrm-docker_${ver_path}.tar.gz"
+			
+			echo -e "\e[32mНастройка прав доступа к скриптам...\e[0m"
+			sudo chmod +x scripts/*.sh
+			
 			echo -e "\e[32mРазвертывание сервисов веб-приложения XRM.\e[0m"
 			sudo docker compose up -d
 
@@ -202,6 +206,8 @@ xrm_restart() {
 
 	cd "./xrm_${ver_path}"
 
+	sudo chmod +x scripts/*.sh
+
 	sudo docker compose down || sudo docker-compose down || su -c "docker-compose down"
 	sudo docker compose up -d || sudo docker-compose up -d || su -c "docker-compose up -d"
 
@@ -233,6 +239,7 @@ set_password() {
 		sudo mkdir "./xrm_${ver_path}" && cd "./xrm_${ver_path}"
 		sudo wget "https://files.x-rm.ru/releases/$ver_url/xrm-docker_${ver_path}.tar.gz"
 		sudo tar -zxvf "xrm-docker_${ver_path}.tar.gz"
+		sudo chmod +x scripts/*.sh
 		touch "./tests/checkpass"
 		cd ..
 		clear
